@@ -1,7 +1,7 @@
 [submodule "src/plugins/de_web"]
 	path = src/plugins/de_web
-	url = https://github.com/dresden-elektronik/deconz-rest-plugin.git
-	branch = master
+	url = https://github.com/SwoopX/deconz-rest-plugin
+	branch = customized
 [submodule "src/plugins/std_otau2"]
 	path = src/plugins/std_otau2
 	url = https://github.com/dresden-elektronik/deconz-ota-plugin.git
