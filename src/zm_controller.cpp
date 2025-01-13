@@ -949,6 +949,8 @@ void zmController::setNetworkConfig(const zmNet &net, const uint8_t *items)
         {
             const QByteArray &key = net.networkKey();
 
+            DBG_Printf(DBG_ERROR, "CTRL network key: %s\n", qPrintable(net.networkKey().toHex()));
+
             if (key.size() == 16)
             {
                 buf[0] = 0x00; // key index 0
