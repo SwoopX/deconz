@@ -3048,6 +3048,7 @@ QByteArray zmController::getParameter(ArrayParameter parameter)
     switch (parameter)
     {
     case ParamNetworkKey:
+        DBG_Printf(DBG_ERROR, "CTRL zmController::getParameter network key: %s\n", qPrintable(net.networkKey().toHex()));
         return net.networkKey();
 
     case ParamTrustCenterLinkKey:
