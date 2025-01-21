@@ -18,3 +18,4 @@
 	path = src/3rdparty/gcfflasher
 	#url = https://github.com/dresden-elektronik/gcfflasher.git
 	url = https://github.com/manup/gcfflasher.git
+	branch = master
