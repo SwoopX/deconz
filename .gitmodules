@@ -16,4 +16,5 @@
 	url = https://github.com/dresden-elektronik/deconz-lib.git
 [submodule "gcfflasher"]
 	path = src/3rdparty/gcfflasher
-	url = https://github.com/dresden-elektronik/gcfflasher.git
+	#url = https://github.com/dresden-elektronik/gcfflasher.git
+	url = https://github.com/manup/gcfflasher.git
