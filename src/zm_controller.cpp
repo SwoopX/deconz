@@ -1972,9 +1972,9 @@ void zmController::readParameterResponse(ZM_State_t status, ZM_DataId_t id, cons
             // key data
             key.setData(data, SecKey::KeySize128);
 
-//            DBG_Printf(DBG_INFO, "CTRL got key for index: %u, addr: " FMT_MAC ", key: 0x%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X\n",
-//                       idx, extAddr, key.at(0), key.at(1), key.at(2), key.at(3), key.at(4), key.at(5), key.at(6), key.at(7),
-//                                     key.at(8), key.at(9), key.at(10), key.at(11), key.at(12), key.at(13), key.at(14), key.at(15));
+            DBG_Printf(DBG_INFO, "CTRL got key for index: %u, addr: " FMT_MAC ", key: 0x%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X\n",
+                       idx, extAddr, key.at(0), key.at(1), key.at(2), key.at(3), key.at(4), key.at(5), key.at(6), key.at(7),
+                                     key.at(8), key.at(9), key.at(10), key.at(11), key.at(12), key.at(13), key.at(14), key.at(15));
 
             net.securityKeyPairs().push_back(keyPair); // TODO check first if one is in
 
