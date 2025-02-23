@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2024 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2013-2025 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -181,7 +181,7 @@ public:
     void removeBindingLink(const deCONZ::Binding &binding);
     void clearAllApsRequestsToNode(NodeInfo node);
     uint8_t genSequenceNumber() { return m_genSequenceNumber++; }
-    void nodeKeyPressed(deCONZ::zmNode *dnode, int key);
+    void nodeKeyPressed(uint64_t extAddr, int key);
     deCONZ::State deviceState() const { return m_devState; }
     void setDeviceState(deCONZ::State state);
     void unregisterGNode(zmgNode *gnode);
@@ -244,7 +244,6 @@ private slots:
     void onSourceRouteChanged(const deCONZ::SourceRoute &sourceRoute);
     void onSourceRouteDeleted(const QString &uuid);
     void initSourceRouting(const QSettings &config);
-    void storeSourceRoutingConfig(QSettings *config);
     void deleteSourcesRouteWith(const deCONZ::Address &addr);
 
     void tick();
@@ -275,6 +274,8 @@ public slots:
     void loadNodesFromDb();
     void saveNodesState();
     void queueSaveNodesState();
+    void saveSourceRouteConfig();
+    void queueSaveSourceRouteConfig();
     void restoreNodesState();
     void toggleLqiView(bool show);
     void toggleNeighborLinks(bool show);
@@ -346,6 +347,7 @@ private:
     QTimer *m_linkCheckTimer;
     QTimer *m_neibCheckTimer;
     QTimer *m_saveNodesTimer;
+    QTimer *m_saveSourceRouteConfigTimer;
     QTimer *m_sendNextTimer;
     QTimer *m_readParamTimer;
     uint8_t m_genSequenceNumber;
