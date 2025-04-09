@@ -258,8 +258,9 @@ static void listDirectoryRequest(DirFetcher &df)
     df.timeout = 0;
 
     am->msg_put_u16(m, df.tag);    /* tag */
-    am->msg_put_cstring(m, url);      /* url */
+    am->msg_put_cstring(m, url);   /* url */
     am->msg_put_u32(m, df.index);  /* index */
+    am->msg_put_u32(m, 128);       /* max_count */
     m->src = AM_ACTOR_ID_UI_VFS;
     m->dst = dstActorId;
     m->id = VFS_M_ID_LIST_DIR_REQ;
@@ -350,7 +351,6 @@ int ActorVfsModel::listDirectoryResponse(am_message *msg)
     unsigned status;
     unsigned short tag;
     int entryIndex = -1;
-    am_string url;
     am_string name;
     unsigned flags;
     unsigned icon;
@@ -388,7 +388,6 @@ int ActorVfsModel::listDirectoryResponse(am_message *msg)
 
     if (status == AM_RESPONSE_STATUS_OK)
     {
-        url = am->msg_get_string(msg);
         index = am->msg_get_u32(msg);
         next_index = am->msg_get_u32(msg);
         count = am->msg_get_u32(msg);
@@ -396,7 +395,7 @@ int ActorVfsModel::listDirectoryResponse(am_message *msg)
         if (msg->status != AM_MSG_STATUS_OK)
             return AM_CB_STATUS_INVALID;
 
-        DBG_Printf(DBG_VFS, "vfs model: handle list directory rsp, tag: %u url: %.*s, index: %u, next_index: %u, count: %u\n", tag, url.size, url.data, index, next_index, count);
+        DBG_Printf(DBG_VFS, "vfs model: handle list directory rsp, tag: %u index: %u, next_index: %u, count: %u\n", tag, index, next_index, count);
 
         std::vector<Entry> entriesToAdd;
 
@@ -524,7 +523,6 @@ int ActorVfsModel::readEntryResponse(am_message *msg)
     unsigned status;
     unsigned short tag;
 
-    am_string url;
     am_string type;
     unsigned mode;
     uint64_t mtime;
@@ -559,7 +557,6 @@ int ActorVfsModel::readEntryResponse(am_message *msg)
 
     if (status == AM_RESPONSE_STATUS_OK && msg->status == AM_MSG_STATUS_OK)
     {
-        url = am->msg_get_string(msg);
         type = am->msg_get_string(msg);
         mode = am->msg_get_u32(msg);
         mtime = am->msg_get_u64(msg);
@@ -571,7 +568,7 @@ int ActorVfsModel::readEntryResponse(am_message *msg)
                 ati_type = ati_unknown;
         }
 
-        if (msg->status == AM_MSG_STATUS_OK && url.size && type.size)
+        if (msg->status == AM_MSG_STATUS_OK && type.size)
         {
             entry.mode = mode;
             entry.type = ati_type;
@@ -624,7 +621,7 @@ int ActorVfsModel::readEntryResponse(am_message *msg)
                 DBG_Printf(DBG_VFS, "vfs model: read entry rsp: TODO handle type\n");
             }
 
-            DBG_Printf(DBG_VFS, "vfs model: read entry rsp: url: %.*s, type: %.*s, value: %llu\n", url.size, url.data, type.size, type.data, (unsigned long long)entry.value);
+            DBG_Printf(DBG_VFS, "vfs model: read entry rsp: type: %.*s, value: %llu\n", type.size, type.data, (unsigned long long)entry.value);
 
             {
                 int parent_e = priv->entries[e].parent;
