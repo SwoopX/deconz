@@ -193,10 +193,12 @@ static int CoreNet_ListDirectoryRequest(struct am_message *msg)
     unsigned short tag;
     am_string url;
     unsigned req_index;
+    unsigned max_count;
 
     tag = am->msg_get_u16(msg);
     url = am->msg_get_string(msg);
     req_index = am->msg_get_u32(msg);
+    max_count = am->msg_get_u32(msg);
 
     /* end of parsing */
 
@@ -217,7 +219,6 @@ static int CoreNet_ListDirectoryRequest(struct am_message *msg)
          * root directory
          */
         am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
-        am->msg_put_cstring(m, "");
         am->msg_put_u32(m, req_index);
         am->msg_put_u32(m, 0); /* no next index */
 
@@ -234,7 +235,6 @@ static int CoreNet_ListDirectoryRequest(struct am_message *msg)
     else if (url == ".actor" && req_index == 0)
     {
         am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
-        am->msg_put_string(m, url.data, url.size);
         am->msg_put_u32(m, req_index);
         am->msg_put_u32(m, 0); /* no next index */
 
@@ -247,7 +247,6 @@ static int CoreNet_ListDirectoryRequest(struct am_message *msg)
     else if (url == "net" && req_index == 0)
     {
         am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
-        am->msg_put_string(m, url.data, url.size);
         am->msg_put_u32(m, req_index);
         am->msg_put_u32(m, 0); /* no next index */
 
@@ -284,7 +283,6 @@ static int CoreNet_ListDirectoryRequest(struct am_message *msg)
         const unsigned count = sizeof(fix_entries) / sizeof(fix_entries[0]);
 
         am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
-        am->msg_put_string(m, url.data, url.size);
         am->msg_put_u32(m, req_index);
         am->msg_put_u32(m, 0); /* no next index */
 
@@ -337,7 +335,6 @@ static int CoreNet_ReadEntryRequest(struct am_message *msg)
     U_sstream_init(&ss, url.data, url.size);
 
     am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
-    am->msg_put_string(m, url.data, url.size);
 
     if (U_sstream_starts_with(&ss, "net/0"))
     {
@@ -489,10 +486,12 @@ static int CoreAps_ListDirectoryRequest(struct am_message *msg)
     unsigned short tag;
     am_string url;
     unsigned req_index;
+    unsigned max_count;
 
     tag = am->msg_get_u16(msg);
     url = am->msg_get_string(msg);
     req_index = am->msg_get_u32(msg);
+    max_count = am->msg_get_u32(msg);
 
     /* end of parsing */
 
@@ -505,15 +504,12 @@ static int CoreAps_ListDirectoryRequest(struct am_message *msg)
 
     am->msg_put_u16(m, tag);
 
-    uint32_t mode = 0;
-
     if (url.size == 0 && req_index == 0)
     {
         /*
          * root directory
          */
         am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
-        am->msg_put_cstring(m, "");
         am->msg_put_u32(m, req_index);
         am->msg_put_u32(m, 0); /* no next index */
 
@@ -537,7 +533,6 @@ static int CoreAps_ListDirectoryRequest(struct am_message *msg)
          * hidden .actor directory
          */
         am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
-        am->msg_put_string(m, url.data, url.size);
         am->msg_put_u32(m, req_index);
         am->msg_put_u32(m, 0); /* no next index */
 
@@ -583,7 +578,6 @@ static int CoreAps_ReadEntryRequest(struct am_message *msg)
 
     am->msg_put_u16(m, tag);
     am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
-    am->msg_put_string(m, url.data, url.size);
 
     if (url == "frames_rx")
     {
