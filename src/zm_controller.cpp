@@ -38,7 +38,7 @@
 #include "deconz/zdp_profile.h"
 #include "deconz/green_power_controller.h"
 #include "deconz/u_assert.h"
-#include "deconz/u_sstream.h"
+#include "deconz/u_sstream_ex.h"
 #include "deconz/u_timer.h"
 #include "source_routing.h"
 #include "db_nodes.h"
@@ -126,7 +126,7 @@ namespace {
     const int MaxApsBusyRequests = 6;
     const int TickMs = zmController::MainTickMs;
     const int MaxRecvErrors = 5;
-    const int MaxRecvErrorsZombie = 10;
+    const int MaxRecvErrorsZombie = 8;
     constexpr deCONZ::TimeSeconds MaxTimeOut{60};
     constexpr deCONZ::TimeSeconds MaxConfirmedTimeOut{10};
     const int MaxZdpTimeout = 3;
@@ -138,6 +138,8 @@ namespace {
 }
 
 static bool ZCL_IsDefaultResponse(const deCONZ::ApsDataRequest &req);
+bool ZDP_SendNwkAddrRequest(zmController *apsCtrl, const deCONZ::Address &dst);
+bool ZDP_SendIeeeAddrRequest(zmController *apsCtrl, const deCONZ::Address &dst);
 
 bool NodeInfo::operator <(const NodeInfo &other) const
 {
@@ -455,7 +457,7 @@ static int CoreNet_ReadEntryRequest(struct am_message *msg)
             am->msg_put_cstring(m, "str");
             am->msg_put_u32(m, mode);
             am->msg_put_u64(m, mtime);
-            am->msg_put_cstring(m, "core/net");
+            am->msg_put_cstring(m, "core_net");
         }
         else
         {
@@ -481,19 +483,227 @@ static int CoreNet_ReadEntryRequest(struct am_message *msg)
     return AM_CB_STATUS_OK;
 }
 
+#define AM_MAX_URL_ELEMENTS 16
+
+struct am_url_parse
+{
+    am_string url;
+    unsigned element_count;
+    uint8_t elements[AM_MAX_URL_ELEMENTS];
+};
+
+struct am_ls_dir_req
+{
+    unsigned short tag;
+    unsigned req_index;
+    unsigned max_count;
+    am_url_parse url_parse;
+};
+
+struct am_read_entry_req
+{
+    unsigned short tag;
+    am_url_parse url_parse;
+};
+
+am_string AM_UrlElementAt(am_url_parse *up, unsigned idx)
+{
+    am_string result;
+    result.size = 0;
+    result.data = nullptr;
+
+    if (up->element_count <= idx)
+        return result;
+
+    unsigned i;
+    unsigned pos = 0;
+
+    for (i = 0; i < idx; i++)
+    {
+        pos += up->elements[i] + 1; // +1 for '/'
+    }
+
+    result.data = &up->url.data[pos];
+    result.size = up->elements[i];
+
+    return result;
+}
+
+int AM_ParseUrl(am_url_parse *up)
+{
+    up->element_count = 0;
+    up->elements[0] = 0;
+
+    for (unsigned i = 0; i < up->url.size; i++)
+    {
+        if (up->url.data[i] == '/')
+        {
+            U_ASSERT(AM_MAX_URL_ELEMENTS >= up->element_count + 1);
+            if (AM_MAX_URL_ELEMENTS < up->element_count + 1)
+                return 0; // TODO too many elements
+
+            up->element_count++;
+            up->elements[up->element_count] = 0;
+        }
+        else
+        {
+            up->elements[up->element_count] += 1;
+        }
+    }
+
+    if (up->url.size)
+        up->element_count++;
+
+    return 1;
+}
+
+int AM_ParseListDirectoryRequest(struct am_message *msg, am_ls_dir_req *req)
+{
+    req->tag = am->msg_get_u16(msg);
+    req->url_parse.url = am->msg_get_string(msg);
+    req->req_index = am->msg_get_u32(msg);
+    req->max_count = am->msg_get_u32(msg);
+
+    if (msg->status == AM_MSG_STATUS_OK)
+        if (AM_ParseUrl(&req->url_parse))
+            return msg->status;
+
+    return AM_MSG_STATUS_ERROR;
+}
+
+int AM_ParseReadEntryRequest(struct am_message *msg, am_read_entry_req *req)
+{
+    req->tag = am->msg_get_u16(msg);
+    req->url_parse.url = am->msg_get_string(msg);
+
+    if (msg->status == AM_MSG_STATUS_OK)
+        if (AM_ParseUrl(&req->url_parse))
+            return msg->status;
+
+    return AM_MSG_STATUS_ERROR;
+}
+
+static void CoreAps_ListDevicesNodeDirectoryRequest(struct am_message *m, am_ls_dir_req *req)
+{
+    U_ASSERT(req->url_parse.element_count >= 2);
+
+    uint64_t mac;
+
+    {
+        U_SStream ss;
+        am_string str_mac = AM_UrlElementAt(&req->url_parse, 1);
+        U_sstream_init(&ss, str_mac.data, str_mac.size);
+        mac = U_sstream_get_mac_address(&ss);
+        if (ss.status != U_SSTREAM_OK || mac == 0)
+        {
+            am->msg_put_u8(m, AM_RESPONSE_STATUS_NOT_FOUND);
+            return;
+        }
+    }
+
+    NodeInfo ni = _apsCtrl->nodeWithMac(mac);
+
+    if (!ni.isValid())
+    {
+        am->msg_put_u8(m, AM_RESPONSE_STATUS_NOT_FOUND);
+        return;
+    }
+
+    if (req->url_parse.element_count == 2 && req->req_index == 0)
+    {
+        am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
+        am->msg_put_u32(m, req->req_index);
+
+
+        am->msg_put_u32(m, 0); /* dummy next index */
+        am->msg_put_u32(m, 2); /* dummy count */
+
+        /*******************************************/
+
+        am->msg_put_cstring(m, "nwk");
+        am->msg_put_u16(m, 0); /* flags */
+        am->msg_put_u16(m, 1); /* icon */
+
+        am->msg_put_cstring(m, "node_desc");
+        am->msg_put_u16(m, 0); /* flags */
+        am->msg_put_u16(m, 1); /* icon */
+    }
+    else
+    {
+        am->msg_put_u8(m, AM_RESPONSE_STATUS_NOT_FOUND);
+    }
+}
+
+static void CoreAps_ListDevicesDirectoryRequest(struct am_message *m, am_ls_dir_req *req)
+{
+    if (req->url_parse.element_count == 1) // devices
+    {
+        am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
+        am->msg_put_u32(m, req->req_index);
+
+        am_u32 next_index = req->req_index;
+        am_u32 count = 0;
+        unsigned hdr_pos = m->pos;
+
+        am->msg_put_u32(m, 0); /* dummy next index */
+        am->msg_put_u32(m, 0); /* dummy count */
+
+        /*******************************************/
+
+        unsigned i = req->req_index;
+
+        for (; i < (unsigned)_apsCtrl->nodeCount(); i++)
+        {
+            NodeInfo ni = _apsCtrl->nodeAt(i);
+            next_index++;
+
+            if (ni.data && count < req->max_count)
+            {
+                count++;
+                char buf[28];
+                U_SStream ss;
+                U_sstream_init(&ss, buf, sizeof(buf));
+                U_sstream_put_mac_address(&ss, ni.data->address().ext());
+
+                am->msg_put_cstring(m, ss.str);
+                am->msg_put_u16(m, VFS_LS_DIR_ENTRY_FLAGS_IS_DIR); /* flags */
+                am->msg_put_u16(m, 0); /* icon */
+
+                if (count == 16)
+                    break;
+            }
+        }
+
+        if (i == (unsigned)_apsCtrl->nodeCount() || count == 0)
+            next_index = 0;
+
+        // fill in real header data
+        unsigned pos1 = m->pos;
+        m->pos = hdr_pos;
+
+        am->msg_put_u32(m, next_index); /* no next index */
+        am->msg_put_u32(m, count); /* count */
+
+        m->pos = pos1;
+    }
+    else if (req->url_parse.element_count >= 2)
+    {
+        CoreAps_ListDevicesNodeDirectoryRequest(m, req);
+    }
+    else
+    {
+        am->msg_put_u8(m, AM_RESPONSE_STATUS_NOT_FOUND);
+    }
+}
+
+
 static int CoreAps_ListDirectoryRequest(struct am_message *msg)
 {
     struct am_message *m;
+    struct am_ls_dir_req req;
 
-    unsigned short tag;
-    am_string url;
-    unsigned req_index;
-    unsigned max_count;
-
-    tag = am->msg_get_u16(msg);
-    url = am->msg_get_string(msg);
-    req_index = am->msg_get_u32(msg);
-    max_count = am->msg_get_u32(msg);
+    if (AM_ParseListDirectoryRequest(msg, &req) != AM_MSG_STATUS_OK)
+        return AM_CB_STATUS_INVALID;
 
     /* end of parsing */
 
@@ -504,20 +714,27 @@ static int CoreAps_ListDirectoryRequest(struct am_message *msg)
     if (!m)
         return AM_CB_STATUS_MESSAGE_ALLOC_FAILED;
 
-    am->msg_put_u16(m, tag);
+    m->src = msg->dst;
+    m->dst = msg->src;
+    m->id = VFS_M_ID_LIST_DIR_RSP;
+    am->msg_put_u16(m, req.tag);
 
-    if (url.size == 0 && req_index == 0)
+    if (req.url_parse.url.size == 0 && req.req_index == 0)
     {
         /*
          * root directory
          */
         am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
-        am->msg_put_u32(m, req_index);
+        am->msg_put_u32(m, req.req_index);
         am->msg_put_u32(m, 0); /* no next index */
 
-        am->msg_put_u32(m, 3); /* count */
+        am->msg_put_u32(m, 4); /* count */
         /*************************************/
         am->msg_put_cstring(m, ".actor");
+        am->msg_put_u16(m, VFS_LS_DIR_ENTRY_FLAGS_IS_DIR); /* flags */
+        am->msg_put_u16(m, 0); /* icon */
+
+        am->msg_put_cstring(m, "devices");
         am->msg_put_u16(m, VFS_LS_DIR_ENTRY_FLAGS_IS_DIR); /* flags */
         am->msg_put_u16(m, 0); /* icon */
 
@@ -529,47 +746,101 @@ static int CoreAps_ListDirectoryRequest(struct am_message *msg)
         am->msg_put_u16(m, 0); /* flags */
         am->msg_put_u16(m, 1); /* icon */
     }
-    else if (url == ".actor" && req_index == 0)
+    else if (req.url_parse.element_count >= 1)
     {
-        /*
-         * hidden .actor directory
-         */
-        am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
-        am->msg_put_u32(m, req_index);
-        am->msg_put_u32(m, 0); /* no next index */
+        am_string elem1 = AM_UrlElementAt(&req.url_parse, 0);
+        if (elem1 == "devices")
+        {
+            CoreAps_ListDevicesDirectoryRequest(m, &req);
+        }
+        else if (req.url_parse.url == ".actor" && req.req_index == 0 && req.url_parse.element_count == 1)
+        {
+            /*
+             * hidden .actor directory
+             */
+            am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
+            am->msg_put_u32(m, req.req_index);
+            am->msg_put_u32(m, 0); /* no next index */
 
-        am->msg_put_u32(m, 1); /* count */
-        /*************************************/
+            am->msg_put_u32(m, 1); /* count */
+            /*************************************/
 
-        am->msg_put_cstring(m, "name");
-        am->msg_put_u16(m, 0); /* flags */
-        am->msg_put_u16(m, 1); /* icon */
+            am->msg_put_cstring(m, "name");
+            am->msg_put_u16(m, 0); /* flags */
+            am->msg_put_u16(m, 1); /* icon */
+        }
+        else
+        {
+            am->msg_put_u8(m, AM_RESPONSE_STATUS_NOT_FOUND);
+        }
     }
     else
     {
         am->msg_put_u8(m, AM_RESPONSE_STATUS_NOT_FOUND);
     }
 
-    m->src = msg->dst;
-    m->dst = msg->src;
-    m->id = VFS_M_ID_LIST_DIR_RSP;
     am->send_message(m);
 
     return AM_CB_STATUS_OK;
 }
 
+static void Core_ReadEntryDevicesReq(struct am_message *m, struct am_read_entry_req *req)
+{
+
+    uint64_t mac;
+    NodeInfo ni = {};
+
+    U_ASSERT(req->url_parse.element_count >= 2);
+
+    {
+        U_SStream ss;
+        am_string str_mac = AM_UrlElementAt(&req->url_parse, 1);
+        U_sstream_init(&ss, str_mac.data, str_mac.size);
+        mac = U_sstream_get_mac_address(&ss);
+
+        if (ss.status != U_SSTREAM_OK)
+            return;
+
+        ni = _apsCtrl->nodeWithMac(mac);
+        if (!ni.data)
+            return;
+
+    }
+
+    if (req->url_parse.element_count == 3)
+    {
+        uint32_t mode = VFS_ENTRY_MODE_READONLY;
+        uint64_t mtime = 0;
+        am_string prop = AM_UrlElementAt(&req->url_parse, 2);
+
+        if (prop == "nwk")
+        {
+            am->msg_put_cstring(m, "u16");
+            am->msg_put_u32(m, mode | VFS_ENTRY_MODE_DISPLAY_HEX);
+            am->msg_put_u64(m, mtime);
+            am->msg_put_u16(m, ni.data->address().nwk());
+        }
+        else if (prop == "node_desc")
+        {
+            am->msg_put_cstring(m, "blob");
+            am->msg_put_u32(m, mode | VFS_ENTRY_MODE_DISPLAY_HEX);
+            am->msg_put_u64(m, mtime);
+            auto nd = ni.data->nodeDescriptor().toByteArray();
+            am->msg_put_blob(m, (unsigned)nd.size(), (unsigned char*)nd.constData());
+        }
+    }
+}
+
 static int CoreAps_ReadEntryRequest(struct am_message *msg)
 {
     struct am_message *m;
+    struct am_read_entry_req req;
 
-    uint16_t tag;
-    am_string url;
+    if (AM_ParseReadEntryRequest(msg, &req) != AM_MSG_STATUS_OK)
+        return AM_CB_STATUS_INVALID;
 
     uint32_t mode = VFS_ENTRY_MODE_WRITEABLE;
     uint64_t mtime = 0;
-
-    tag = am->msg_get_u16(msg);
-    url = am->msg_get_string(msg);
 
     if (msg->status != AM_MSG_STATUS_OK)
         return AM_CB_STATUS_INVALID;
@@ -578,38 +849,52 @@ static int CoreAps_ReadEntryRequest(struct am_message *msg)
     if (!m)
         return AM_CB_STATUS_MESSAGE_ALLOC_FAILED;
 
-    am->msg_put_u16(m, tag);
+    am->msg_put_u16(m, req.tag);
     am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
 
-    if (url == "frames_rx")
+    unsigned empty_pos = m->pos; // to check if entry was put into message
+
+    am_string elem0 = AM_UrlElementAt(&req.url_parse, 0);
+
+    if (req.url_parse.element_count == 1)
     {
-        am->msg_put_cstring(m, "u64");
-        am->msg_put_u32(m, mode);
-        am->msg_put_u64(m, mtime);
-        am->msg_put_u64(m, aps_frames_rx);
+        if (elem0 == "frames_rx")
+        {
+            am->msg_put_cstring(m, "u64");
+            am->msg_put_u32(m, mode);
+            am->msg_put_u64(m, mtime);
+            am->msg_put_u64(m, aps_frames_rx);
+        }
+        else if (elem0 == "frames_tx")
+        {
+            am->msg_put_cstring(m, "u64");
+            am->msg_put_u32(m, mode);
+            am->msg_put_u64(m, mtime);
+            am->msg_put_u64(m, aps_frames_tx);
+        }
     }
-    else if (url == "frames_tx")
+    else if (req.url_parse.element_count >= 2)
     {
-        am->msg_put_cstring(m, "u64");
-        am->msg_put_u32(m, mode);
-        am->msg_put_u64(m, mtime);
-        am->msg_put_u64(m, aps_frames_tx);
-    }
-    else if (url == ".actor/name")
-    {
-        am->msg_put_cstring(m, "str");
-        am->msg_put_u32(m, mode);
-        am->msg_put_u64(m, mtime);
-        am->msg_put_cstring(m, "core/aps");
-    }
-    else
-    {
-        m->pos = 0;
+        if (elem0 == "devices")
+        {
+            Core_ReadEntryDevicesReq(m, &req);
+        }
+        else if (elem0 == ".actor")
+        {
+            if (AM_UrlElementAt(&req.url_parse, 1) == "name")
+            {
+                am->msg_put_cstring(m, "str");
+                am->msg_put_u32(m, mode);
+                am->msg_put_u64(m, mtime);
+                am->msg_put_cstring(m, "core_aps");
+            }
+        }
     }
 
-    if (m->pos == 0)
+    if (m->pos == empty_pos)
     {
-        am->msg_put_u16(m, tag);
+        m->pos = 0;
+        am->msg_put_u16(m, req.tag);
         am->msg_put_u8(m, AM_RESPONSE_STATUS_NOT_FOUND);
     }
 
@@ -896,6 +1181,24 @@ zmController::~zmController()
 
      _netModel = nullptr;
     _apsCtrl = nullptr;
+}
+
+NodeInfo zmController::nodeAt(size_t index)
+{
+    if (index < m_nodes.size())
+        return m_nodes[index];
+    return {};
+}
+
+NodeInfo zmController::nodeWithMac(uint64_t mac)
+{
+    deCONZ:Address addr;
+    addr.setExt(mac);
+    NodeInfo *ni = getNode(addr, deCONZ::ExtAddress);
+    if (ni && ni->isValid())
+        return *ni;
+
+    return {};
 }
 
 static bool isValidMacAddress(uint64_t mac)
@@ -1448,7 +1751,7 @@ void zmController::nodeKeyPressed(uint64_t extAddr, int key)
         }
         else if (key == deCONZ::NodeKeyRequestNwkAddress)
         {
-            if (sendNwkAddrRequest(node))
+            if (ZDP_SendNwkAddrRequest(this, node->data->address()))
             {
             }
         }
@@ -5980,9 +6283,9 @@ void zmController::deleteNode(NodeInfo *node, NodeRemoveMode finally)
 }
 
 
-bool zmController::sendNwkAddrRequest(NodeInfo *node)
+bool ZDP_SendNwkAddrRequest(zmController *apsCtrl, const deCONZ::Address &dst)
 {
-    if (!node || !node->data)
+    if (!apsCtrl || !dst.hasExt())
     {
         return false;
     }
@@ -5992,7 +6295,7 @@ bool zmController::sendNwkAddrRequest(NodeInfo *node)
     req.setDstEndpoint(ZDO_ENDPOINT);
     req.setSrcEndpoint(ZDO_ENDPOINT);
     req.setDstAddressMode(deCONZ::ApsNwkAddress);
-    req.dstAddress().setExt(node->data->address().ext()); // reference
+    req.dstAddress().setExt(dst.ext()); // reference
     req.dstAddress().setNwk(deCONZ::BroadcastRxOnWhenIdle);
     req.setProfileId(ZDP_PROFILE_ID);
     req.setClusterId(ZDP_NWK_ADDR_CLID);
@@ -6000,8 +6303,8 @@ bool zmController::sendNwkAddrRequest(NodeInfo *node)
 
     QDataStream stream(&req.asdu(), QIODevice::WriteOnly);
     stream.setByteOrder(QDataStream::LittleEndian);
-    stream << genSequenceNumber(); // seq no.
-    stream << (quint64)node->data->address().ext(); // device address
+    stream << apsCtrl->genSequenceNumber(); // seq no.
+    stream << (quint64)dst.ext(); // device address
 
     //uint8_t requestType = 0x01; // extended request
     uint8_t requestType = 0x00; // single device request
@@ -6010,16 +6313,12 @@ bool zmController::sendNwkAddrRequest(NodeInfo *node)
     stream << requestType;
     stream << startIndex;
 
-    if (apsdeDataRequest(req) == deCONZ::Success)
+    if (apsCtrl->apsdeDataRequest(req) == deCONZ::Success)
     {
-//        DBG_Printf(DBG_ZDP, "send NWK_addr_req to %s, last seen %" PRId64 " s, last seen by neighbors %" PRId64 " s\n",
-//                   node->data->extAddressString().c_str(), (int64_t)(node->data->lastSeenElapsed() / 1000), (node->data->lastSeenByNeighbor() / 1000));
         return true;
     }
-    else
-    {
-        DBG_Printf(DBG_ZDP, "failed to send NWK_Addr_req to %s\n", node->data->extAddressString().c_str());
-    }
+
+    DBG_Printf(DBG_ZDP, "failed to send NWK_Addr_req to " FMT_MAC "\n", FMT_MAC_CAST(dst.ext()));
 
     return false;
 }
@@ -6057,42 +6356,6 @@ bool ZDP_SendIeeeAddrRequest(zmController *apsCtrl, const deCONZ::Address &dst)
     {
         return true;
     }
-    return false;
-}
-
-bool zmController::sendIeeeAddrRequest(NodeInfo *node)
-{
-    if (!node || !node->data)
-    {
-        return false;
-    }
-
-    // unicast to the node, if the node answers it will be marked as non-zombie
-    // in the APS-DATA.indication
-    ApsDataRequest req;
-    QDataStream stream(&req.asdu(), QIODevice::WriteOnly);
-    stream.setByteOrder(QDataStream::LittleEndian);
-
-    req.dstAddress().setNwk(node->data->address().nwk());
-    req.setDstAddressMode(deCONZ::ApsNwkAddress);
-
-    req.setDstEndpoint(ZDO_ENDPOINT);
-    req.setSrcEndpoint(ZDO_ENDPOINT);
-    req.setProfileId(ZDP_PROFILE_ID);
-//    req.setTxOptions(deCONZ::ApsTxAcknowledgedTransmission);
-    req.setRadius(0);
-    req.setClusterId(ZDP_IEEE_ADDR_CLID);
-    stream << genSequenceNumber();
-    stream << node->data->address().nwk();
-
-    stream << (uint8_t)0x00; // single request type
-    stream << (uint8_t)0x00; // ignore start index
-
-    if (apsdeDataRequest(req) == deCONZ::Success)
-    {
-        return true;
-    }
-
     return false;
 }
 
@@ -8791,10 +9054,20 @@ void zmController::deviceDiscoverTick()
 
         NodeInfo &node = m_nodes[m_lqiIter];
 
-        if (!node.data || node.data->isZombie() || node.data->isEndDevice() ||
+        if (!node.data || node.data->isEndDevice() ||
              node.data->isInWaitState() || !node.data->address().hasNwk())
         {
             m_lqiIter++;
+        }
+        else if (node.data->isZombie() || 2 < node.data->recvErrors())
+        {
+            m_lqiIter++;
+
+            AddressPair addressPair;
+            addressPair.bAddr = node.data->address();
+            addressPair.bMacCapabilities = node.data->nodeDescriptor().macCapabilities();
+
+            addDeviceDiscover(addressPair);
         }
         else if (isValid(node.data->lastSeen()) || node.data->lastSeenByNeighbor() < 9000 ||
                  (!node.data->sourceRoutes().empty() && node.data->sourceRoutes().front().errors() < 1))
@@ -8850,48 +9123,6 @@ void zmController::deviceDiscoverTick()
         {
             m_discoverIter = 0;
         }
-
-#if 0 // TODO(mpi): reactivate?!
-        NodeInfo *node = &m_nodes[m_discoverIter];
-        if (getParameter(deCONZ::ParamPermitJoin) > 0)
-        {
-            // wait
-        }
-        else if (node->data && !node->data->isZombie() && m_apsRequestQueue.size() < 2 && node->data->nodeDescriptor().receiverOnWhenIdle())
-        {
-            if (isValid(node->data->lastSeen()) && node->data->lastSeenElapsed() < (1000 * 60 * 8) &&
-                !node->data->simpleDescriptors().empty()) // already queried?
-            {
-            }
-            else if (m_steadyTimeRef - m_lastNwkAddrRequest < deCONZ::TimeSeconds{45})
-            {
-            }
-            else if (node->data->nodeDescriptor().manufacturerCode() == VENDOR_DDEL && node->data->address().nwk() == 0x0000)
-            { // coordinator ghost nodes
-            }
-#if 0
-            else if (node->data->lastDiscoveryTryMs(m_steadyTimeRef).val == 0 ||
-                     ZombieDiscoveryEmptyInterval < node->data->lastDiscoveryTryMs(m_steadyTimeRef))
-            {
-                if (m_nodes.size() > 80 && !node->data->sourceRoutes().empty())
-                {
-                    if (sendIeeeAddrRequest(node))
-                    {
-                        m_lastNwkAddrRequest = m_steadyTimeRef;
-                    }
-                }
-                else if (sendNwkAddrRequest(node))
-                {
-                    m_lastNwkAddrRequest = m_steadyTimeRef;
-                    m_discoverIter++;
-                    node->data->discoveryTimerReset(m_steadyTimeRef);
-                    node->data->retryIncr(deCONZ::ReqNwkAddr);
-                    return;
-                }
-            }
-#endif
-        }
-#endif // if 0
 
         m_discoverIter++;
     }
@@ -9069,18 +9300,26 @@ void zmController::deviceDiscoverTick()
             {
 
             }
-            else if (m_steadyTimeRef - m_lastNwkAddrRequest < deCONZ::TimeSeconds{15})
+            else if (m_steadyTimeRef - m_lastDiscoveryRequest < deCONZ::TimeSeconds{60})
             {
               // wait
                 m_deviceDiscoverQueue.push_back(addrPair);
             }
-            //else if (node->data->isZombie() && sendNwkAddrRequest(node))
-            else if (ZDP_SendIeeeAddrRequest(this, addrPair.bAddr))
+            else if (node->data->recvErrors() >= 2 && deCONZ::TimeSeconds{60 * 5} < node->data->lastDiscoveryTryMs(m_steadyTimeRef) && ZDP_SendNwkAddrRequest(this, addrPair.bAddr))
             {
-                m_lastNwkAddrRequest = m_steadyTimeRef;
-                node->data->retryIncr(deCONZ::ReqNwkAddr);
+                m_lastDiscoveryRequest = m_steadyTimeRef;
                 node->data->discoveryTimerReset(m_steadyTimeRef);
                 return;
+            }
+            else if (node->data->recvErrors() < 2 && ZDP_SendIeeeAddrRequest(this, addrPair.bAddr))
+            {
+                m_lastDiscoveryRequest = m_steadyTimeRef;
+                node->data->discoveryTimerReset(m_steadyTimeRef);
+                return;
+            }
+            else
+            {
+                m_deviceDiscoverQueue.push_back(addrPair);
             }
         }
     }
