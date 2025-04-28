@@ -171,6 +171,8 @@ public:
     ~zmController();
     int zombieCount() const { return m_zombieCount; }
     int nodeCount() const { return static_cast<int>(m_nodes.size()); }
+    NodeInfo nodeAt(size_t index);
+    NodeInfo nodeWithMac(uint64_t mac);
     int zclCommandRequest(const deCONZ::Address &address, deCONZ::ApsAddressMode addressMode, const deCONZ::SimpleDescriptor &simpleDescriptor, const deCONZ::ZclCluster &cluster, const deCONZ::ZclCommand &command);
     const deCONZ::SimpleDescriptor *getCompatibleEndpoint(const deCONZ::SimpleDescriptor &other);
     void setNetworkConfig(const zmNet &net, const uint8_t *items);
@@ -313,8 +315,6 @@ private:
     void fastPrope(uint64_t ext, uint16_t nwk, uint8_t macCapabilities);
     void wakeNode(NodeInfo *node);
     void deleteNode(NodeInfo *node, NodeRemoveMode finally);
-    bool sendNwkAddrRequest(NodeInfo *node);
-    bool sendIeeeAddrRequest(NodeInfo *node);
     bool sendMgtmLqiRequest(NodeInfo *info);
     bool sendMgtmRtgRequest(NodeInfo *node, uint8_t startIndex);
     bool sendNodeDescriptorRequest(NodeInfo *node);
@@ -354,7 +354,7 @@ private:
     bool m_showLqi = false;
     bool m_showNeighborLinks = true;
     QElapsedTimer m_fetchLqiTickMsCounter;
-    deCONZ::SteadyTimeRef m_lastNwkAddrRequest;
+    deCONZ::SteadyTimeRef m_lastDiscoveryRequest; // global NWK and IEEE requests
     deCONZ::SteadyTimeRef m_lastNodeAdded;
     deCONZ::SteadyTimeRef m_lastEndDeviceAnnounce;
     QElapsedTimer m_lastNodeDeleted;
