@@ -36,6 +36,8 @@ zmCommandInfo::zmCommandInfo(QWidget *parent) :
 {
     ui->setupUi(this);
     m_vbox = new QVBoxLayout(this);
+    m_vbox->setContentsMargins(0,0,0,0);
+    m_vbox->setSpacing(24);
     m_execMapper = new QSignalMapper(this);
 
     m_commandTimeout = 10 * 1000;
@@ -43,11 +45,12 @@ zmCommandInfo::zmCommandInfo(QWidget *parent) :
     m_timer = new QTimer(this);
     m_timer->setSingleShot(true);
 
-    connect(m_timer, SIGNAL(timeout()),
-            this, SLOT(zclCommandTimeout()));
-
-    connect(m_execMapper, SIGNAL(mapped(int)),
-            this, SLOT(onExec(int)));
+    connect(m_timer, &QTimer::timeout, this, &zmCommandInfo::zclCommandTimeout);
+#if QT_VERSION_MAJOR < 6
+    connect(m_execMapper, SIGNAL(mapped(int)), this, SLOT(onExec(int)));
+#else
+    connect(m_execMapper, &QSignalMapper::mappedInt, this, &zmCommandInfo::onExec);
+#endif
 }
 
 zmCommandInfo::~zmCommandInfo()
@@ -360,7 +363,9 @@ void zmCommandInfo::createCommandWidget(CommandDescriptor &descriptor, bool resp
     if (!response)
     {
         cmd = &descriptor.command;
-        w = new QGroupBox(cmd->name());
+        auto *gb = new QGroupBox(cmd->name());
+        w = gb;
+        gb->setFlat(true);
         lay = new QVBoxLayout(w);
         descriptor.execButton = new QPushButton(tr("exec"));
         descriptor.statusLabel = new QLabel;
@@ -508,6 +513,8 @@ void zmCommandInfo::createCommandWidget(CommandDescriptor &descriptor, bool resp
             if (!response)
             {
                 QComboBox *combo = new QComboBox;
+                // adjust size policy otherwise the widget gets too large minimum size for long entries
+                combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
                 valueWidget.reset(combo);
                 auto names = i->valuesNames();
                 auto values = i->valueNamePositions();
@@ -590,8 +597,7 @@ void zmCommandInfo::createCommandWidget(CommandDescriptor &descriptor, bool resp
         execLay->addStretch();
         execLay->addWidget(descriptor.statusLabel);
         execLay->addWidget(descriptor.execButton);
-        connect(descriptor.execButton, SIGNAL(clicked()),
-                m_execMapper, SLOT(map()));
+        connect(descriptor.execButton, &QPushButton::clicked, m_execMapper, qOverload<>(&QSignalMapper::map));
         m_execMapper->setMapping(descriptor.execButton, (int)cmd->id());
     }
 }

@@ -22,20 +22,24 @@
 #include <QNetworkInterface>
 #include <QTableView>
 #include <QStandardItemModel>
+#include <QStyleFactory>
 #include <QToolButton>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QUrl>
+#include <QPixmapCache>
 #include <QPluginLoader>
 #include <QScreen>
 #include <QSortFilterProxyModel>
+#include <QWindow>
 #include <cerrno>
 #ifdef USE_ACTOR_MODEL
 #include <actor/plugin_loader.h>
 #include "actor/service.h"
 #endif
 #include "gui/actor_vfs_view.h"
+#include "gui/theme.h"
 #include "actor_vfs_model.h"
 #include "mainwindow.h"
 #include "source_route_info.h"
@@ -61,6 +65,7 @@
 #include "deconz/http_client_handler.h"
 #include "deconz/util.h"
 #include "deconz/util_private.h"
+#include "deconz/u_assert.h"
 #include "deconz/node_event.h"
 #include "deconz/node_interface.h"
 #include "zcl_private.h"
@@ -194,16 +199,51 @@ MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
 {
+    QString configPath = deCONZ::getStorageLocation(deCONZ::ConfigLocation);
+    QSettings config(configPath, QSettings::IniFormat);
+
+    Theme_Init();
+    // TODO query from OS?
+    // gsettings get org.gnome.desktop.interface color-scheme
+
+    QString theme("light");
+
+    if (config.contains("window/theme"))
+    {
+        theme = config.value("window/theme", "default").toString();
+    }
+
+    if (theme == "dark")
+    {
+        Theme_Activate("dark");
+        QStyle *fusion = QStyleFactory::create("fusion");
+        qApp->setStyle(new AStyle("dark", fusion));
+        qApp->setPalette(qApp->style()->standardPalette());
+    }
+    else
+    {
+        Theme_Activate("light");
+        QStyle *fusion = QStyleFactory::create("fusion");
+        qApp->setStyle(fusion);
+
+        QPalette pal = qApp->style()->standardPalette();
+        int bri = (pal.windowText().color().lightness() + pal.button().color().lightness()) / 2;
+        pal.setColor(QPalette::Disabled, QPalette::WindowText, QColor(bri, bri, bri));
+        pal.setColor(QPalette::Disabled, QPalette::Text, QColor(bri, bri, bri));
+        qApp->setPalette(pal);
+    }
+
+    m_vfsModel = new ActorVfsModel(this);
+
     ui->setupUi(this);
     ui->stackedView->setCurrentWidget(ui->pageOffline);
+    updateLogo();
 
     m_state = StateInit;
     m_restPlugin = nullptr;
     m_devUpdateCanditate = false;
     m_devEnum = new deCONZ::DeviceEnumerator(this);
     m_autoConnIdx = 0;
-
-    m_vfsModel = new ActorVfsModel(this);
 
     _nodeModel = new deCONZ::NodeModel(this);
 
@@ -227,7 +267,10 @@ MainWindow::MainWindow(QWidget *parent) :
     versionLabel->setText(qApp->applicationVersion());
     statusBar()->addPermanentWidget(versionLabel);
 
-    ui->page0AppVersionLabel->setText(tr("Version ") + qApp->applicationVersion() + QString::fromUtf8("\n\nCopyright © 2024 dresden elektronik ingenieurtechnik gmbh. All rights reserved."));
+    const QString vers = QString("Version %1\n\nCopyright © %2 dresden elektronik ingenieurtechnik gmbh. All rights reserved.")
+    .arg(qApp->applicationVersion()).arg(QDate::currentDate().year());
+
+    ui->page0AppVersionLabel->setText(vers);
 
     QScrollArea *scrollArea;
     QGraphicsScene *scene = new QGraphicsScene(ui->graphicsView);
@@ -292,6 +335,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     createFileMenu();
     createEditMenu();
+    createViewMenu();
 
     setDockOptions(ForceTabbedDocks | AllowTabbedDocks);
 
@@ -309,6 +353,7 @@ MainWindow::MainWindow(QWidget *parent) :
     // Dock NodeInfo
     m_dockNodeInfo = new QDockWidget(tr("Node Info"), this);
     m_dockNodeInfo->setObjectName("NodeInfoDock");
+    m_dockNodeInfo->setTitleBarWidget(new QWidget()); // don't show title bar
     m_dockNodeInfo->setWidget(m_nodeInfo);
     m_dockNodeInfo->setStyleSheet("::title { position: relative; padding-left: 7px; }");
     addDockWidget(Qt::LeftDockWidgetArea, m_dockNodeInfo);
@@ -317,15 +362,28 @@ MainWindow::MainWindow(QWidget *parent) :
     // Dock ClusterInfo
     auto *dockClusterInfo = new QDockWidget(tr("Cluster Info"), this);
     dockClusterInfo->setObjectName("ClusterInfoDock");
+    dockClusterInfo->setTitleBarWidget(new QWidget()); // don't show title bar
     scrollArea = new QScrollArea(this);
+    //scrollArea->setAutoFillBackground(true);
+
+    _clusterInfo->setAutoFillBackground(true);
     scrollArea->setWidget(deCONZ::clusterInfo());
     scrollArea->setWidgetResizable(true);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setFrameStyle(QFrame::NoFrame | QFrame::Plain);
+    // // fix background color due QScrollArea
+    // scrollArea->viewport()->setAutoFillBackground(false);
+    // scrollArea->widget()->setAutoFillBackground(false);
+
     dockClusterInfo->setWidget(scrollArea);
     addDockWidget(Qt::LeftDockWidgetArea, dockClusterInfo);
     m_menuPanels->addAction(dockClusterInfo->toggleViewAction());
 
     // Dock BindDropbox
     auto *dockBinding = new QDockWidget(tr("Bind Dropbox"), this);
+    dockBinding->setTitleBarWidget(new QWidget()); // don't show title bar
     dockBinding->setObjectName("BindDropbox");
     dockBinding->setWidget(m_bindDropbox);
     addDockWidget(Qt::LeftDockWidgetArea, dockBinding);
@@ -334,6 +392,7 @@ MainWindow::MainWindow(QWidget *parent) :
     // Dock NodeListView
     QDockWidget *dockNodeList;
     dockNodeList = new QDockWidget(tr("Node List"), this);
+    dockNodeList->setTitleBarWidget(new QWidget()); // don't show title bar
     dockNodeList->setObjectName("NodeListView");
     dockNodeList->setWidget(m_nodeTableView);
     addDockWidget(Qt::RightDockWidgetArea, dockNodeList);
@@ -344,15 +403,13 @@ MainWindow::MainWindow(QWidget *parent) :
 #ifdef APP_FEATURE_SOURCE_ROUTING
     _sourceRouteInfo = new SourceRouteInfo(this);
     auto * dockSourceRouting = new QDockWidget(tr("Source Routing"), this);
+    dockSourceRouting->setTitleBarWidget(new QWidget()); // don't show title bar
     dockSourceRouting->setObjectName("SourceRoutingDock");
     dockSourceRouting->setWidget(_sourceRouteInfo);
     dockSourceRouting->hide();
     addDockWidget(Qt::LeftDockWidgetArea, dockSourceRouting);
     m_menuPanels->addAction(dockSourceRouting->toggleViewAction());
 #endif // APP_FEATURE_SOURCE_ROUTING
-
-    QString configPath = deCONZ::getStorageLocation(deCONZ::ConfigLocation);
-    QSettings config(configPath, QSettings::IniFormat);
 
     if (config.contains("window/state")) {
         QByteArray arr = config.value("window/state").toByteArray();
@@ -524,7 +581,6 @@ MainWindow::MainWindow(QWidget *parent) :
 
     m_dockNodeInfo->raise();
 
-
     m_showPanelActions.append(m_dockNodeInfo->toggleViewAction());
     m_showPanelActions.append(dockClusterInfo->toggleViewAction());
 
@@ -533,10 +589,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     deCONZ::utilSetNotifyHandler(deCONZ::notifyHandler);
 
-    // forward
-    connect(this, SIGNAL(nodeEvent(deCONZ::NodeEvent)),
-            deCONZ::controller(), SIGNAL(nodeEvent(deCONZ::NodeEvent)));
-
+    // TODO(mpi): Remove when events come from AM_ACTOR_ID_GUI_NODE
     connect(deCONZ::controller(), &zmController::nodeEvent, this, &MainWindow::onNodeEvent);
 
     setState(StateIdle, __LINE__);
@@ -561,6 +614,7 @@ MainWindow::~MainWindow()
     _mainWindow = nullptr;
     delete ui;
     ui = nullptr;
+    Theme_Destroy();
 }
 
 void MainWindow::onControllerEvent(const zmNetEvent &event)
@@ -772,20 +826,19 @@ void MainWindow::onSelectionChanged()
     if (nodes.isEmpty() || (nodes.size() > 1)) // only display one
     {
         m_nodeInfo->setNode(nullptr);
-        deCONZ::NodeEvent event(deCONZ::NodeEvent::NodeDeselected, nullptr);
-        emit nodeEvent(event);
     }
     else
     {
         m_nodeInfo->setNode(m_vfsModel, nodes.first()->data()->address().ext());
         m_nodeInfo->setNode(nodes.first()->data());
-        deCONZ::NodeEvent event(deCONZ::NodeEvent::NodeSelected, nodes.first()->data());
-        emit nodeEvent(event);
     }
 }
 
 void MainWindow::onNodeEvent(const deCONZ::NodeEvent &event)
 {
+    // TODO(mpi): Currently these events come from the controller. However the mainwindow
+    // shall subscribe to AM_ACTOR_ID_GUI_NODE to receive these events within the GUI.
+
     if (event.node() && event.event() == deCONZ::NodeEvent::NodeContextMenu)
     {
         QMenu menu;
@@ -1182,10 +1235,17 @@ void MainWindow::loadPluginsStage2()
                 {
                     dockName = w->windowTitle();
                 }
+                if (w->layout())
+                {
+                    w->layout()->setContentsMargins(0,0,0,0);
+                }
                 QDockWidget *dock = new QDockWidget(dockName, this);
                 dock->setObjectName(name.trimmed().replace(" ", ""));
+                dock->setTitleBarWidget(new QWidget()); // don't show title bar
                 dock->setWidget(w);
                 dock->hide();
+                //dock->setBackgroundRole(QPalette::Highlight);
+                //dock->setAutoFillBackground(true);
                 if (!restoreDockWidget(dock))
                 {
                     addDockWidget(Qt::LeftDockWidgetArea, dock);
@@ -1394,14 +1454,11 @@ void MainWindow::initAutoConnectManager()
 
 void MainWindow::createMainToolbar()
 {
-    m_actionDeviceDisconnect = ui->mainToolBar->addAction(QIcon(":/icons/faenza/stock_disconnect.png"),
-                                                          tr("Disconnect"), this, SLOT(devDisconnectClicked()));
-    m_actionDeviceDisconnect->setEnabled(false);
-
     QWidget *w = new QWidget;
     w->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     ui->mainToolBar->addWidget(w);
 
+    ui->mainToolBar->setFont(Theme_FontRegular()); // without it macos has tiny font
     m_leaveAction = ui->mainToolBar->addAction(tr("Leave"), deCONZ::master(), SLOT(leaveNetwork()));
     m_leaveAction->setEnabled(false);
     m_leaveAction->setToolTip(tr("Leave the network"));
@@ -1466,6 +1523,11 @@ void MainWindow::createMainToolbar()
     m_openPhosconAppButton->setToolTip(tr("Opens the Phoscon App in your browser."));
     connect(m_openPhosconAppButton, SIGNAL(clicked(bool)), this, SLOT(openPhosconApp()));
     ui->mainToolBar->addWidget(m_openPhosconAppButton);
+
+    // ensure minimum horizontal padding of buttons
+    int pad = 32;
+    linksButton->setMinimumWidth(Theme_TextWidth(fontMetrics(), linksButton->text()) + pad);
+    m_openPhosconAppButton->setMinimumWidth(Theme_TextWidth(fontMetrics(), m_openPhosconAppButton->text()) + pad);
 }
 
 void MainWindow::createHelpMenu()
@@ -1584,6 +1646,36 @@ void MainWindow::setState(MainWindow::State state, int line)
     }
 }
 
+void MainWindow::updateLogo()
+{
+    // draw logo in current theme style (blending logo mask against theme color)
+    {
+        QImage mask(":/img/deconz_mask.png");
+        mask = mask.scaledToWidth(220, Qt::SmoothTransformation);
+        QImage img(mask.width(), mask.height(), QImage::Format_ARGB32);
+        QColor fg = palette().color(QPalette::Window);
+
+        if (fg.red() < 100)
+        {
+            fg = fg.lighter(160);
+        }
+        else
+        {
+            fg = fg.darker(160);
+        }
+
+        for (int y = 0; y < img.height(); ++y) {
+            for (int x = 0; x < img.width(); ++x) {
+                int a = mask.pixelColor(x, y).red();
+                QColor c = fg;
+                c.setAlpha(a);
+                img.setPixelColor(x, y, c);
+            }
+        }
+        ui->labelLogo->setPixmap(QPixmap::fromImage(img));
+    }
+}
+
 void MainWindow::createFileMenu()
 {
     QMenu *menu = menuBar()->addMenu(tr("&File"));
@@ -1655,6 +1747,23 @@ void MainWindow::createEditMenu()
                                      this, SLOT(showSendToDialog()));
 
     m_sendToAction->setShortcuts(QList<QKeySequence>() << Qt::Key_F6);
+
+    m_actionDeviceDisconnect = m_editMenu->addAction(tr("Disconnect"));
+    connect(m_actionDeviceDisconnect, &QAction::triggered, this, &MainWindow::devDisconnectClicked);
+    m_actionDeviceDisconnect->setEnabled(false);
+}
+
+void MainWindow::createViewMenu()
+{
+    QMenu *menu = menuBar()->addMenu(tr("&View"));
+
+    m_lightThemeAction = menu->addAction(tr("Classic theme"));
+    m_lightThemeAction->setData("light");
+    connect(m_lightThemeAction, &QAction::triggered, this, &MainWindow::switchTheme);
+
+    m_darkThemeAction = menu->addAction(tr("Dark theme"));
+    m_darkThemeAction->setData("dark");
+    connect(m_darkThemeAction, &QAction::triggered, this, &MainWindow::switchTheme);
 }
 
 void MainWindow::showAboutDialog()
@@ -2002,50 +2111,59 @@ void MainWindow::updateNetworkControls()
     if (deCONZ::master()->connected())
     {
         m_netConfigAction->setEnabled(true);
+        QColor netStateColor = m_netStateLabel->palette().color(QPalette::WindowText);
 
         switch (deCONZ::master()->netState())
         {
         case deCONZ::NotInNetwork:
             m_netStateLabel->setText(tr("Not In Network"));
-            m_netStateLabel->setStyleSheet("color: #ff0000;");
+            netStateColor = Qt::red;
             m_joinAction->setEnabled(true);
             m_leaveAction->setEnabled(false);
             break;
 
         case deCONZ::Connecting:
             m_netStateLabel->setText(tr("Joining ..."));
-            m_netStateLabel->setStyleSheet("color: #204a87;");
+            netStateColor = 0xFF204a87;
             m_joinAction->setEnabled(false);
             m_leaveAction->setEnabled(false);
             break;
 
         case deCONZ::InNetwork:
             m_netStateLabel->setText(tr("In Network"));
-            m_netStateLabel->setStyleSheet("color: #00dd00;");
+            netStateColor = 0xFF00dd00;
             m_joinAction->setEnabled(false);
             m_leaveAction->setEnabled(true);
             break;
 
         case deCONZ::Leaving:
             m_netStateLabel->setText(tr("Leaving ..."));
-            m_netStateLabel->setStyleSheet("color: #204a87;");
+            netStateColor = 0xFF204a87;
             m_joinAction->setEnabled(false);
             m_leaveAction->setEnabled(false);
             break;
 
         case deCONZ::Touchlink:
             m_netStateLabel->setText(tr("Touchlink"));
-            m_netStateLabel->setStyleSheet("color: #204a87;");
+            netStateColor = 0xFF204a87;
             m_joinAction->setEnabled(true);
             m_leaveAction->setEnabled(true);
             break;
 
         default:
-            m_netStateLabel->setStyleSheet("color: #ff0000;");
+            netStateColor = 0xFFff0000;
             m_netStateLabel->setText(tr("Unknown"));
             m_joinAction->setEnabled(false);
             m_leaveAction->setEnabled(false);
             break;
+        }
+
+        {
+            auto pal = qApp->palette();
+            pal.setColor(QPalette::WindowText, netStateColor);
+            m_netStateLabel->setForegroundRole(QPalette::WindowText);
+            m_netStateLabel->setPalette(pal);
+            m_netStateLabel->update();
         }
 
         setWindowTitle(qApp->applicationName() + " - " + m_devEntry.friendlyName + " (" + m_devEntry.path + ")");
@@ -2053,7 +2171,13 @@ void MainWindow::updateNetworkControls()
     else
     {
         m_netStateLabel->setText(tr("Not Connected"));
-        m_netStateLabel->setStyleSheet("color: #ff0000;");
+
+        auto pal = qApp->palette();
+        pal.setColor(QPalette::WindowText, Qt::red);
+        m_netStateLabel->setForegroundRole(QPalette::WindowText);
+        m_netStateLabel->setPalette(pal);
+        m_netStateLabel->update();
+
         m_netConfigAction->setEnabled(false);
         m_leaveAction->setEnabled(false);
         m_joinAction->setEnabled(false);
@@ -2227,6 +2351,83 @@ void MainWindow::openPhosconApp()
     // fallback: localhost
     const QString url = QString("http://127.0.0.1:%1%2").arg(port).arg(urlPath);
     QDesktopServices::openUrl(url);
+}
+
+void MainWindow::switchTheme()
+{
+    QAction *action = qobject_cast<QAction*>(sender());
+    if (!action)
+        return;
+
+    QString theme = action->data().toString();
+    QStyle *fusion = QStyleFactory::create("fusion");
+
+    QString configPath = deCONZ::getStorageLocation(deCONZ::ConfigLocation);
+    QSettings config(configPath, QSettings::IniFormat);
+
+    Theme_Activate(theme);
+    if (theme == "dark")
+    {
+        qApp->setStyle(new AStyle(theme, fusion));
+        config.setValue("window/theme", theme);
+    }
+    else if (theme == "light")
+    {
+        qApp->setStyle(fusion);
+        //qApp->setStyle(new AStyle(theme, fusion));
+        config.setValue("window/theme", theme);
+    }
+    else
+    {
+        U_ASSERT(0 && "unsupported theme");
+    }
+
+    QStyle *s = QApplication::style();
+
+    QPixmapCache::clear();
+
+    QPalette pal = qApp->style()->standardPalette();
+    // adjust disabled text color (fusion is too low contrast)
+    int bri = (pal.windowText().color().lightness() + pal.button().color().lightness()) / 2;
+    pal.setColor(QPalette::Disabled, QPalette::WindowText, QColor(bri, bri, bri));
+    pal.setColor(QPalette::Disabled, QPalette::Text, QColor(bri, bri, bri));;
+    QApplication::setPalette(pal);
+
+    // Repaint all top-level widgets.
+    for (auto* widget : QApplication::allWidgets())
+    {
+        widget->setPalette(pal);
+        s->unpolish(widget);
+        s->polish(widget);
+        widget->update();
+    }
+
+    updateLogo();
+
+    updateNetworkControls(); // sets text color of m_netStateLabel
+
+
+    ///// hack to update nodes indicator colors
+    {
+        QList<QGraphicsItem *>items = ui->graphicsView->scene()->items();
+
+        auto i = items.begin();
+        auto end = items.end();
+
+        for (; i!= end; ++i)
+        {
+            zmgNode *g = qgraphicsitem_cast<zmgNode*>(*i);
+            if (g)
+            {
+                g->indicate(deCONZ::IndicateReceive);
+
+            }
+        }
+
+    }
+    /////
+
+    ui->graphicsView->repaintAll();
 }
 
 void MainWindow::resetNodesActionTriggered()

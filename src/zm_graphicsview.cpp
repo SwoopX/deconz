@@ -8,13 +8,19 @@
  *
  */
 
+#include <QMimeData>
 #include <QTimerEvent>
 #include <QPixmap>
 #include <QWheelEvent>
 #include <qmath.h>
 #include <vector>
+#include "deconz/atom_table.h"
+#include "deconz/dbg_trace.h"
+#include "deconz/u_sstream_ex.h"
 #include "gui/gnode_link_group.h"
 #include "zm_graphicsview.h"
+#include "zm_gnode.h"
+#include "actor_vfs_model.h"
 
 struct NodeIndicator
 {
@@ -34,6 +40,9 @@ public:
 
 static zmGraphicsView *inst;
 static GraphicsViewPrivate *inst_d;
+static AT_AtomIndex ati_state;
+static AT_AtomIndex ati_config;
+static AT_AtomIndex ati_devices;
 
 // defined in zm_gnode.cpp
 extern void NV_IndicatorCallback(void *user);
@@ -67,6 +76,7 @@ zmGraphicsView::zmGraphicsView(QWidget *parent) :
 {
     setDragMode(QGraphicsView::ScrollHandDrag);
     setRenderHint(QPainter::Antialiasing);
+    setAcceptDrops(true);
 
 //    setCacheMode(QGraphicsView::CacheBackground);
 
@@ -83,6 +93,12 @@ zmGraphicsView::zmGraphicsView(QWidget *parent) :
     inst_d = d_ptr;
 
     d_ptr->m_indicationTimer = startTimer(500);
+
+    AT_AddAtom("config", qstrlen("config"), &ati_config);
+    AT_AddAtom("state", qstrlen("state"), &ati_state);
+    AT_AddAtom("devices", qstrlen("devices"), &ati_devices);
+
+    connect(ActorVfsModel::instance(), &ActorVfsModel::dataChanged, this, &zmGraphicsView::vfsDataChanged);
 }
 
 zmGraphicsView::~zmGraphicsView()
@@ -104,8 +120,8 @@ void zmGraphicsView::setScene(QGraphicsScene *scene)
     scene->setItemIndexMethod(QGraphicsScene::NoIndex);
     updateMargins();
 
-
     //QColor sceneColor(250, 250, 250);
+#if 0
     QColor sceneColor(245, 245, 245);
 
 #if 0
@@ -123,6 +139,7 @@ void zmGraphicsView::setScene(QGraphicsScene *scene)
     QBrush bgBrush(sceneColor);
 #endif
     scene->setBackgroundBrush(bgBrush);
+#endif
 
     connect(scene, SIGNAL(sceneRectChanged(QRectF)),
             this, SLOT(onSceneRectChanged(QRectF)));
@@ -160,9 +177,9 @@ void zmGraphicsView::wheelEvent(QWheelEvent *event)
 
     if (dy < 0.0) // zoom in
     {
-        if (scaleY > 1.0)
+        if (scaleY > 1.25)
         {
-            scaleY = 1.0;
+            scaleY = 1.25;
         }
     }
     else // zoom out
@@ -187,6 +204,50 @@ void zmGraphicsView::drawBackground(QPainter *painter, const QRectF &rect)
     d_ptr->m_nodeLinkGroup->paint(painter, rect);
 }
 
+void zmGraphicsView::dragEnterEvent(QDragEnterEvent *event)
+{
+    const QMimeData *mimeData = event->mimeData();
+
+    if (mimeData)
+    {
+        const auto fmts = mimeData->formats();
+
+        for (const auto &fmt : fmts)
+        {
+            DBG_Printf(DBG_INFO, "fmt: %s\n", qPrintable(fmt));
+
+            DBG_Printf(DBG_INFO, "%s\n", mimeData->data(fmt).constData());
+        }
+
+        if (mimeData->hasFormat("application/vnd.wireshark.displayfilter"))
+        {
+            event->acceptProposedAction();
+        }
+    }
+}
+
+void zmGraphicsView::dragMoveEvent(QDragMoveEvent *event)
+{
+    Q_UNUSED(event)
+}
+
+void zmGraphicsView::dropEvent(QDropEvent *event)
+{
+    DBG_Printf(DBG_INFO, "drop event:\n");
+
+    const QMimeData *mimeData = event->mimeData();
+    if (!mimeData)
+    {
+        return;
+    }
+
+    if (mimeData->hasFormat("application/vnd.wireshark.displayfilter"))
+    {
+        const QByteArray data = mimeData->data("application/vnd.wireshark.displayfilter");
+        DBG_Printf(DBG_INFO, "%s\n", data.constData());
+    }
+}
+
 void zmGraphicsView::processIndications()
 {
     for (size_t i = 0; i < d_ptr->indicators.size(); i++)
@@ -199,6 +260,64 @@ void zmGraphicsView::processIndications()
         {
             d_ptr->indicators[i] = d_ptr->indicators.back();
             d_ptr->indicators.pop_back();
+        }
+    }
+}
+
+void zmGraphicsView::vfsDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles)
+{
+    // devices/00:0b:57:ff:fe:26:56:80/subdevices/00:0b:57:ff:fe:26:56:80-01/attr/swversion
+
+    QModelIndex parent = topLeft.parent();
+
+    // state/*
+    AT_AtomIndex atiParent;
+    atiParent.index = parent.data(ActorVfsModel::AtomIndexRole).toUInt();
+
+    if (atiParent.index == ati_state.index || atiParent.index == ati_config.index)
+    {
+    }
+    else
+    {
+        return; // filter for now
+    }
+
+    parent = parent.parent(); // <sub device id>
+    parent = parent.parent(); // subdevices
+    parent = parent.parent(); // <mac>
+
+    AT_Atom aMac;
+    AT_Atom aValueName;
+
+    {
+        const auto v1 = parent.data(ActorVfsModel::AtomIndexRole);
+        const auto v2 = topLeft.data(ActorVfsModel::AtomIndexRole);
+
+        if (v1.isNull() || v2.isNull())
+            return;
+
+        AT_AtomIndex ati_mac;
+        AT_AtomIndex ati_value_name;
+        ati_mac.index = v1.toUInt();
+        ati_value_name.index = v2.toUInt();
+
+        aMac = AT_GetAtomByIndex(ati_mac);
+        aValueName = AT_GetAtomByIndex(ati_value_name);
+    }
+
+    if (aMac.data && aMac.len == 23 && aValueName.data)
+    {
+        U_SStream ss;
+        uint64_t mac = 0;
+
+        U_sstream_init(&ss, aMac.data, aMac.len);
+        mac = U_sstream_get_mac_address(&ss);
+
+
+        zmgNode *gnode = GUI_GetNodeWithMac(mac);
+        if (gnode)
+        {
+            gnode->vfsModelUpdated(topLeft);
         }
     }
 }
@@ -234,6 +353,12 @@ void zmGraphicsView::updateMargins()
 
 
     d_ptr->m_marginTimer->stop();
+}
+
+void zmGraphicsView::repaintAll()
+{
+    d_ptr->m_nodeLinkGroup->repaintAll();
+    update();
 }
 
 void zmGraphicsView::onSceneRectChanged(const QRectF &rect)

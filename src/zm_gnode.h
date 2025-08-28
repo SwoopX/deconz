@@ -21,6 +21,7 @@ class NodeSocket;
 class NodeLink;
 class QGraphicsRectItem;
 class QTimer;
+class QModelIndex;
 
 /*!
     \class Node
@@ -43,12 +44,6 @@ public:
     {
         NeighborSocket = 0,
         DataSocket = 1
-    };
-
-    enum NodeState
-    {
-//        CompactState,
-        ComplexState
     };
 
     explicit zmgNode(deCONZ::zmNode *data, QGraphicsItem *parent = 0);
@@ -96,13 +91,13 @@ public:
     void setLastSeen(qint64 lastSeen);
     void setHasDDF(int hasDDF);
     void indicationTick();
+    void vfsModelUpdated(const QModelIndex &index);
 
 signals:
     void moved();
 
-    void socketConnectRequest(NodeSocket *src, NodeSocket *dst);
-    void linkDisconnectRequest(NodeLink *link);
-    void contextMenuRequest();
+//    void socketConnectRequest(NodeSocket *src, NodeSocket *dst);
+//    void linkDisconnectRequest(NodeLink *link);
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
@@ -112,8 +107,12 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
 
     void updateParameters();
+    void resetIndicator();
 
-protected:
+private:
+    void paintClassic(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
+
+
     deCONZ::SteadyTimeRef m_otauActiveTime{};
     QGraphicsEllipseItem *m_indicator = nullptr;
     deCONZ::zmNode *m_data = nullptr;
@@ -127,8 +126,8 @@ protected:
     QRectF m_endpointToggle;
     const IndicationDef *m_indDef = nullptr;
     int m_indCount = 0;
+    deCONZ::Indication m_indType;
     QRectF m_indRect;
-    NodeState m_nodeState;
     QString m_name;
     QString m_extAddress;
     quint64 m_extAddressCache = 0;
@@ -141,12 +140,18 @@ protected:
     QPixmap m_pm;
     int m_width;
     int m_height;
+    int m_heightExta;
     int m_battery = -1;
+    float m_temperature = 0;
+    int m_lux = 0;
     bool m_isZombie = false;
     bool m_dirty = false;
+    uint32_t m_vfsState0 = 0;
     deCONZ::DeviceType m_deviceType = deCONZ::UnknownDevice;
 };
 
 void GUI_InitNodeActor();
+
+zmgNode *GUI_GetNodeWithMac(uint64_t mac);
 
 #endif
