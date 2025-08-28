@@ -852,8 +852,22 @@ static int CoreNode_GuiNodeMessageCallback(struct am_message *msg)
     if (msg->status != AM_MSG_STATUS_OK)
         return AM_CB_STATUS_UNSUPPORTED;
 
-    if (msg->id == M_ID_GUI_NODE_SELECTED || msg->id == M_ID_GUI_NODE_DESELECTED)
+    if (!deCONZ::controller())
+        return AM_CB_STATUS_UNSUPPORTED;
+
+    if (msg->id == M_ID_GUI_NODE_SELECTED)
     {
+        deCONZ::controller()->onNodeSelected(extaddr);
+        return AM_CB_STATUS_OK;
+    }
+    else if (msg->id == M_ID_GUI_NODE_DESELECTED)
+    {
+        deCONZ::controller()->onNodeDeselected(extaddr);
+        return AM_CB_STATUS_OK;
+    }
+    else if (msg->id == M_ID_GUI_NODE_CONTEXT_MENU)
+    {
+        deCONZ::controller()->onNodeContextMenuRequest(extaddr);
         return AM_CB_STATUS_OK;
     }
     else if (msg->id == M_ID_GUI_NODE_MOVED)
@@ -2145,6 +2159,31 @@ void zmController::readParameterResponse(ZM_State_t status, ZM_DataId_t id, cons
         {
             if (net.networkKey().size() < 16 ||
                 (net.networkKey().size() == 16 && memcmp(net.networkKey().data(), &data[1], 16) != 0))
+            {
+                net.setNetworkKey(QByteArray((const char*)&data[1], 16));
+                updateCount++;
+            }
+        }
+        else
+        {
+            DBG_Printf(DBG_ERROR, "CTRL got network key with invalid index %u\n", data[0]);
+        }
+        break;
+
+    case ZM_DID_STK_NETWORK_KEY2:
+        DBG_Assert(length == 18);
+        // u8 keyIndex
+        // u8 sequenceNumber
+        // u8[16] key
+        if (data[0] == 0 && length == 18)
+        {
+            if (net.networkKeySequenceNumber() != data[1])
+            {
+                net.setNetworkKeySequenceNumber(data[1]);
+                updateCount++;
+            }
+            if (net.networkKey().size() < 16 ||
+                (net.networkKey().size() == 16 && memcmp(net.networkKey().data(), &data[2], 16) != 0))
             {
                 net.setNetworkKey(QByteArray((const char*)&data[1], 16));
                 updateCount++;
@@ -5970,8 +6009,6 @@ NodeInfo zmController::createNode(const Address &addr, deCONZ::MacCapabilities m
     info.data = new deCONZ::zmNode(macCapabilities);
     info.g = new zmgNode(info.data, nullptr);
 
-    connect(info.g, &zmgNode::contextMenuRequest, this, &zmController::onNodeContextMenuRequest);
-
     info.id = m_nodes.size() + 1;
 
     QPointF p;
@@ -7533,21 +7570,45 @@ void zmController::verifyChildNode(NodeInfo *node)
     node->data->touch(m_steadyTimeRef);
 }
 
-void zmController::onNodeContextMenuRequest()
+void zmController::onNodeSelected(uint64_t mac)
 {
-    auto *node = dynamic_cast<zmgNode*>(sender());
-    Q_ASSERT(node);
-    Q_ASSERT(node->data());
-
-    if (!node->isSelected())
+    deCONZ::Address addr;
+    addr.setExt(mac);
+    NodeInfo *node = getNode(addr, deCONZ::ExtAddress);
+    U_ASSERT(node);
+    U_ASSERT(node->data);
+    if (node && node->data)
     {
-        node->setSelected(true);
-        NodeEvent event(NodeEvent::NodeSelected, node->data());
+        deCONZ::NodeEvent event(deCONZ::NodeEvent::NodeSelected, node->data);
         emit nodeEvent(event);
     }
+}
 
-    NodeEvent event(NodeEvent::NodeContextMenu, node->data());
-    emit nodeEvent(event);
+void zmController::onNodeDeselected(uint64_t mac)
+{
+    deCONZ::Address addr;
+    addr.setExt(mac);
+    NodeInfo *node = getNode(addr, deCONZ::ExtAddress);
+
+    if (node && node->data)
+    {
+        deCONZ::NodeEvent event(deCONZ::NodeEvent::NodeDeselected, node->data);
+        emit nodeEvent(event);
+    }
+}
+
+void zmController::onNodeContextMenuRequest(uint64_t mac)
+{
+    deCONZ::Address addr;
+    addr.setExt(mac);
+    NodeInfo *node = getNode(addr, deCONZ::ExtAddress);
+    U_ASSERT(node);
+    U_ASSERT(node->data);
+    if (node && node->data)
+    {
+        NodeEvent event(NodeEvent::NodeContextMenu, node->data);
+        emit nodeEvent(event);
+    }
 }
 
 void zmController::onSourceRouteChanged(const SourceRoute &sourceRoute)
@@ -10084,4 +10145,19 @@ void zmController::addNodePlugin(NodeInterface *plugin)
                     this, SLOT(onRestNodeUpdated(quint64,QString,QString)));
         }
     }
+}
+
+/* TODO(mpi): Ths needs to be moved to GUI layer later on. */
+zmgNode *GUI_GetNodeWithMac(uint64_t mac)
+{
+    if (_apsCtrl)
+    {
+        NodeInfo ni = _apsCtrl->nodeWithMac(mac);
+        if (ni.g)
+        {
+            return ni.g;
+        }
+    }
+
+    return nullptr;
 }

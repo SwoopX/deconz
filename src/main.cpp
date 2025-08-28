@@ -111,6 +111,12 @@ int main(int argc, char *argv[])
             arg = arg + args[i].size() + 1;
         }
 
+#if 0
+// unfortunately this messes up node drawing and other widget stuff
+        QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling, true);
+        QGuiApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, true);
+        QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+#endif
         zmApp a(argc2, argv2);
 
         if (!pidInitialised) // needs to run after app instance created
@@ -253,6 +259,11 @@ int main(int argc, char *argv[])
         if (deCONZ::appArgumentNumeric("--dbg-vfs", 0) > 0)
         {
             DBG_Enable(DBG_VFS);
+        }
+
+        if (deCONZ::appArgumentNumeric("--dbg-fw", 0) > 0)
+        {
+            DBG_Enable(DBG_FIRMWARE);
         }
 
         QCoreApplication::setOrganizationName("dresden-elektronik");

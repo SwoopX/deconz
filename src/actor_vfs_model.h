@@ -30,6 +30,12 @@ public:
         ColumnMax = 3
     };
 
+    enum ExtraRoles
+    {
+        AtomIndexRole = Qt::UserRole + 1,
+        RawValueRole = Qt::UserRole + 2
+    };
+
     explicit ActorVfsModel(QObject *parent = nullptr);
     ~ActorVfsModel();
 
@@ -43,11 +49,15 @@ public:
     void fetchMore(const QModelIndex &parent) override;
     QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 
+    int changedNotify(struct am_message *msg);
     int listDirectoryResponse(struct am_message *msg);
     int readEntryResponse(struct am_message *msg);
     void continueFetching();
 
     void addActorId(unsigned actorId);
+    int indexForActorId(unsigned actorId);
+
+    static ActorVfsModel *instance();
 
 private Q_SLOTS:
     void fetchTimerFired();

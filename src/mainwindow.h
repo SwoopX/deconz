@@ -98,15 +98,14 @@ private Q_SLOTS:
     void appAboutToQuit();
     void openWebApp();
     void openPhosconApp();
-
-Q_SIGNALS:
-    void nodeEvent(const deCONZ::NodeEvent&);
+    void switchTheme();
 
 protected:
     void timerEvent(QTimerEvent *event);
     void createMainToolbar();
     void createFileMenu();
     void createEditMenu();
+    void createViewMenu();
     void createHelpMenu();
     void createFetchMenu(bool enableRFD, bool enableFFD);
 
@@ -129,6 +128,7 @@ private:
         QByteArray serial;
     };
     void setState(State state, int line);
+    void updateLogo();
 
     State m_state;
 
@@ -138,6 +138,8 @@ private:
     QAction *m_joinAction;
     QLabel *m_netStateLabel;
     QAction *m_netConfigAction;
+    QAction *m_lightThemeAction;
+    QAction *m_darkThemeAction;
     QPushButton *m_autoPushButton;
     QPushButton *m_openPhosconAppButton;
     QAction *m_sendToAction;

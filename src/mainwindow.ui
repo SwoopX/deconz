@@ -27,73 +27,9 @@
        <enum>QFrame::Raised</enum>
       </property>
       <property name="currentIndex">
-       <number>1</number>
+       <number>0</number>
       </property>
       <widget class="QWidget" name="pageOffline">
-       <property name="palette">
-        <palette>
-         <active>
-          <colorrole role="Base">
-           <brush brushstyle="SolidPattern">
-            <color alpha="255">
-             <red>255</red>
-             <green>255</green>
-             <blue>255</blue>
-            </color>
-           </brush>
-          </colorrole>
-          <colorrole role="Window">
-           <brush brushstyle="SolidPattern">
-            <color alpha="255">
-             <red>250</red>
-             <green>250</green>
-             <blue>250</blue>
-            </color>
-           </brush>
-          </colorrole>
-         </active>
-         <inactive>
-          <colorrole role="Base">
-           <brush brushstyle="SolidPattern">
-            <color alpha="255">
-             <red>255</red>
-             <green>255</green>
-             <blue>255</blue>
-            </color>
-           </brush>
-          </colorrole>
-          <colorrole role="Window">
-           <brush brushstyle="SolidPattern">
-            <color alpha="255">
-             <red>250</red>
-             <green>250</green>
-             <blue>250</blue>
-            </color>
-           </brush>
-          </colorrole>
-         </inactive>
-         <disabled>
-          <colorrole role="Base">
-           <brush brushstyle="SolidPattern">
-            <color alpha="255">
-             <red>250</red>
-             <green>250</green>
-             <blue>250</blue>
-            </color>
-           </brush>
-          </colorrole>
-          <colorrole role="Window">
-           <brush brushstyle="SolidPattern">
-            <color alpha="255">
-             <red>250</red>
-             <green>250</green>
-             <blue>250</blue>
-            </color>
-           </brush>
-          </colorrole>
-         </disabled>
-        </palette>
-       </property>
        <property name="autoFillBackground">
         <bool>true</bool>
        </property>
@@ -124,24 +60,33 @@
             <property name="orientation">
              <enum>Qt::Horizontal</enum>
             </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::MinimumExpanding</enum>
+            </property>
             <property name="sizeHint" stdset="0">
              <size>
-              <width>140</width>
+              <width>40</width>
               <height>62</height>
              </size>
             </property>
            </spacer>
           </item>
           <item>
-           <widget class="QLabel" name="label_5">
+           <widget class="QLabel" name="labelLogo">
+            <property name="maximumSize">
+             <size>
+              <width>320</width>
+              <height>16777215</height>
+             </size>
+            </property>
             <property name="text">
              <string/>
             </property>
             <property name="pixmap">
-             <pixmap resource="zm_resources.qrc">:/img/welcome.png</pixmap>
+             <pixmap resource="zm_resources.qrc">:/img/deconz_mask.png</pixmap>
             </property>
-            <property name="scaledContents">
-             <bool>false</bool>
+            <property name="alignment">
+             <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
             </property>
            </widget>
           </item>
@@ -150,9 +95,12 @@
             <property name="orientation">
              <enum>Qt::Horizontal</enum>
             </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Minimum</enum>
+            </property>
             <property name="sizeHint" stdset="0">
              <size>
-              <width>40</width>
+              <width>32</width>
               <height>20</height>
              </size>
             </property>
@@ -243,7 +191,7 @@ p, li { white-space: pre-wrap; }
           <item>
            <widget class="QStackedWidget" name="stateStackedWidget">
             <property name="currentIndex">
-             <number>2</number>
+             <number>0</number>
             </property>
             <widget class="QWidget" name="connectPage">
              <layout class="QHBoxLayout" name="horizontalLayout_6">
@@ -380,10 +328,6 @@ p, li { white-space: pre-wrap; }
                      </property>
                      <property name="text">
                       <string>Connect</string>
-                     </property>
-                     <property name="icon">
-                      <iconset resource="zm_resources.qrc">
-                       <normaloff>:/icons/faenza/stock_connect.png</normaloff>:/icons/faenza/stock_connect.png</iconset>
                      </property>
                      <property name="iconSize">
                       <size>
@@ -625,9 +569,6 @@ p, li { white-space: pre-wrap; }
             <verstretch>0</verstretch>
            </sizepolicy>
           </property>
-          <property name="styleSheet">
-           <string notr="true">zmGraphicsWidget,  QFrame { border-top: 0; border-right: 0; border-left: 1px solid palette(midlight); border-bottom: 1px solid palette(midlight);}</string>
-          </property>
           <property name="frameShape">
            <enum>QFrame::StyledPanel</enum>
           </property>
@@ -744,9 +685,6 @@ p, li { white-space: pre-wrap; }
   <widget class="QToolBar" name="mainToolBar">
    <property name="autoFillBackground">
     <bool>false</bool>
-   </property>
-   <property name="styleSheet">
-    <string notr="true">QToolBar {background-color: transparent; border: none; border-bottom: 1px solid palette(midlight);}</string>
    </property>
    <property name="movable">
     <bool>false</bool>

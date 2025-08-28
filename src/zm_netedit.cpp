@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2024 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2013-2025 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -14,6 +14,9 @@
 #include <QGroupBox>
 #include <QTimer>
 #include <QStandardItemModel>
+#include <QFontDatabase>
+#include <QFontMetrics>
+#include "gui/theme.h"
 #include "zm_netedit.h"
 #include "zm_netdescriptor_model.h"
 #include "zm_controller.h"
@@ -29,10 +32,8 @@ zmNetEdit::zmNetEdit(QWidget *parent) :
 
     setWindowTitle(tr("deCONZ Network Settings"));
 
-    QFont monoFont("Courier New");
-#ifdef Q_OS_OSX
-    monoFont.setPointSize(13);
-#endif
+    QFont monoFont = Theme_FontMonospace();
+
     ui->panIdEdit->setFont(monoFont);
     ui->extPanIdEdit->setFont(monoFont);
     ui->apsUseExtPanIdEdit->setFont(monoFont);
@@ -42,6 +43,20 @@ zmNetEdit::zmNetEdit(QWidget *parent) :
     ui->networkKeyEdit->setFont(monoFont);
     ui->tcLinkKeyEdit->setFont(monoFont);
     ui->tcMasterKeyEdit->setFont(monoFont);
+
+    QFontMetrics fm(monoFont);
+
+    int w64 = Theme_TextWidth(fm, "=0x0011223344556677=");
+    int w128 = Theme_TextWidth(fm, "=0x00112233445566770011223344556677=");
+
+    ui->extPanIdEdit->setMinimumWidth(w64);
+    ui->apsUseExtPanIdEdit->setMinimumWidth(w64);
+    ui->extEdit->setMinimumWidth(w64);
+    ui->tcAddressEdit->setMinimumWidth(w64);
+
+    ui->networkKeyEdit->setMinimumWidth(w128);
+    ui->tcLinkKeyEdit->setMinimumWidth(w128);
+    ui->tcMasterKeyEdit->setMinimumWidth(w128);
 
     connect(ui->refreshButton, SIGNAL(clicked()),
             this, SLOT(onRefresh()));
@@ -77,16 +92,21 @@ zmNetEdit::zmNetEdit(QWidget *parent) :
         QCheckBox *chBox = new QCheckBox;
         grid->addWidget(label, 0, col);
         grid->addWidget(chBox, 1, col);
-        chBox->setMinimumHeight(24);
-        label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-        chBox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
         m_channels.append(chBox);
         col++;
     }
 
+    grid->setContentsMargins(4,4,4,4);
+
     ui->endpointGroupBox->setEnabled(true);
     m_endpointLayout = new QVBoxLayout(ui->endpointGroupBox);
+    m_endpointLayout->setSpacing(24);
     ui->endpointGroupBox->setLayout(m_endpointLayout);
+
+    // fix endpoint tab not having active background color due QScrollArea
+    ui->scrollArea->viewport()->setAutoFillBackground(false);
+    ui->scrollArea->widget()->setAutoFillBackground(false);
+
     m_configCount = 0;
     ui->configStatus->clear();
     m_state = IdleState;
@@ -177,6 +197,8 @@ void zmNetEdit::setNetwork(const zmNet &net)
         ui->networkKeyEdit->setText("0x00000000000000000000000000000000");
     }
 
+    ui->networkKeySequenceNumberEdit->setValue((int)net.networkKeySequenceNumber());
+
     if (!net.zllKey().isEmpty())
     {
         ui->zllKeyEdit->setText(QString("0x") + net.zllKey().toHex());
@@ -221,14 +243,14 @@ void zmNetEdit::setNetwork(const zmNet &net)
 
         QCheckBox *checkBox = m_channels[i];
 
-        if (net.channel() == (i + 11))
-        {
-            checkBox->setStyleSheet("background-color: #ededed; border: 1px solid #dddddd; padding: 2px; border-radius: 5px;");
-        }
-        else
-        {
-            checkBox->setStyleSheet("");
-        }
+        // if (net.channel() == (i + 11))
+        // {
+        //     checkBox->setStyleSheet("background-color: #ededed; border: 1px solid #dddddd; padding: 2px; border-radius: 5px;");
+        // }
+        // else
+        // {
+        //     checkBox->setStyleSheet("");
+        // }
 
         if (net.channelMask() & (1 << ch))
         {
@@ -480,6 +502,7 @@ void zmNetEdit::onAccept()
     items[n++] = ZM_DID_ZLL_KEY;
     items[n++] = ZM_DID_ZLL_FACTORY_NEW;
 
+    Q_ASSERT(n < sizeof(items));
     items[0] = n - 1;
     m_configTimer->start(); // TODO: remove timeout based handling trust master instead
 
@@ -539,7 +562,7 @@ zmNetEdit::Endpoint * zmNetEdit::getEndpointWidget(int index)
     ep->outClusters = new QLineEdit;
 
     m_endpointLayout->invalidate();
-    ui->endpointGroupBox->setSizePolicy(QSizePolicy::Preferred,
+    ui->endpointGroupBox->setSizePolicy(QSizePolicy::Expanding,
                                         QSizePolicy::Expanding);
     m_endpointLayout->setSizeConstraint(QLayout::SetMinimumSize);
 
@@ -550,6 +573,7 @@ zmNetEdit::Endpoint * zmNetEdit::getEndpointWidget(int index)
     form->addRow(tr("&Device version"), ep->deviceVersion);
     form->addRow(tr("&In clusters"), ep->inClusters);
     form->addRow(tr("&Out clusters"), ep->outClusters);
+    form->setFieldGrowthPolicy(QFormLayout::FieldGrowthPolicy::ExpandingFieldsGrow);
     ep->groupBox->setLayout(form);
 
     m_endpointLayout->addWidget(ep->groupBox);

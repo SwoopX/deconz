@@ -1,11 +1,32 @@
 cmake_minimum_required(VERSION 3.13)
 
+
+option(USE_QT6 "Build with Qt6" OFF)
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt5 COMPONENTS Core Gui Widgets SerialPort Network REQUIRED)
+if(USE_QT6)
+  set(QT_VERSION_MAJOR 6)
+  add_compile_definitions(QT_NO_DEPRECATED_WARNINGS=1)
+elseif(CMAKE_PREFIX_PATH MATCHES "5\.[0-9][0-9]\.[0-9]")
+  set(QT_VERSION_MAJOR 5)
+elseif(CMAKE_PREFIX_PATH MATCHES "6\.[0-9][0-9]\.[0-9]")
+  set(QT_VERSION_MAJOR 6)
+  set(USE_QT6 1)
+else()
+  set(QT_VERSION_MAJOR 5) # default to qt5
+endif()
+
+if (QT_VERSION_MAJOR EQUAL 6)
+  find_package(Qt6 COMPONENTS Core Gui Widgets SerialPort Network REQUIRED)
+elseif (QT_VERSION_MAJOR EQUAL 5)
+  find_package(Qt5 COMPONENTS Core Gui Widgets SerialPort Network REQUIRED)
+else()
+    message( FATAL_ERROR "QT_VERSION_MAJOR must be defined" )
+endif()
 
 set(PUB_INCLUDE_FILES
     3rdparty/actor_model/actor/plugin.h
@@ -20,6 +41,7 @@ set(PUB_INCLUDE_FILES
     db_nodes.h
     debug_view.h
     gui/actor_vfs_view.h
+    gui/theme.h
     mainwindow.h
     send_to_dialog.h
     source_route_info.h
@@ -88,6 +110,7 @@ add_executable(${PROJECT_NAME}
     db_nodes.cpp
     debug_view.cpp
     gui/actor_vfs_view.cpp
+    gui/theme.cpp
     main.cpp
     mainwindow.cpp
     send_to_dialog.cpp
@@ -170,9 +193,18 @@ if (Git_FOUND)
         OUTPUT_VARIABLE GIT_COMMIT
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} tag --points-at HEAD
+        WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
+        OUTPUT_VARIABLE GIT_TAGS
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    string (REPLACE "\n" ";" GIT_TAGS "${GIT_TAGS}")
 endif()
 
-message(STATUS "build channel: ${BUILD_CHANNEL}")
+message(STATUS "build channel: ${BUILD_CHANNEL}, tags: #${GIT_TAGS}#")
+
+configure_file(config.h.in config.h @ONLY)
 
 target_compile_definitions(${PROJECT_NAME}
     PRIVATE
@@ -183,8 +215,6 @@ target_compile_definitions(${PROJECT_NAME}
     APP_MIN_NODES=5
     APP_MAX_NODES=512
     APP_FEATURE_SOURCE_ROUTING
-    GIT_COMMIT="\"\"${GIT_COMMIT}\"\""
-    GIT_DATE=${GIT_DATE}
     COMMERCIAL_KEY=0x93UL # RaspBee, ConBee, ConBee II, RaspBee II
     USE_QEXT_SERIAL
     USE_ULIB_SHARED
@@ -251,7 +281,6 @@ if (UNIX)
 endif()
 
 #--------------------------------------------------------------
-
 add_subdirectory(plugins)
 
 #--------------------------------------------------------------

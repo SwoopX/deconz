@@ -420,8 +420,7 @@ void zmController::loadNodesFromDb()
 
         auto node = DB_CreateNodeInfo(dbNode, m_nodes.size() + 1);
         Q_ASSERT(node.data);
-        connect(node.g, &zmgNode::contextMenuRequest, this, &zmController::onNodeContextMenuRequest);
-        connect(node.g, SIGNAL(moved()), this, SLOT(queueSaveNodesState()));
+
         if (!node.g->scene())
         {
             m_scene->addItem(node.g);

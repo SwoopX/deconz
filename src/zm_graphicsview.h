@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2024 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2013-2025 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -31,16 +31,20 @@ public:
 public Q_SLOTS:
     void onSceneRectChanged(const QRectF &rect);
     void updateMargins();
+    void repaintAll();
 //    void processForces();
-//    void displayNode(zmgNode *node);
 
 protected:
     void timerEvent(QTimerEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void drawBackground(QPainter *painter, const QRectF &rect) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 private:
     void processIndications();
+    void vfsDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles = QVector<int>());
 
     GraphicsViewPrivate *d_ptr = nullptr;
 };

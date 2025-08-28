@@ -21,6 +21,7 @@
 #include <QUrlQuery>
 
 #include "deconz/types.h"
+#include "gui/theme.h"
 #include "zm_controller.h"
 #include "zm_gcluster.h"
 #include "zm_gendpointbox.h"
@@ -244,10 +245,16 @@ void zmgCluster::paint(QPainter *painter, const QStyleOptionGraphicsItem *option
     const int averageCharWidth = painter->fontMetrics().averageCharWidth();
     const int textY = static_cast<int>(m_rect.y() + averageCharWidth + painter->fontMetrics().ascent());
 
-    const QColor colorDim(102, 102, 102);
-    const QColor colorLightGray(221, 221, 221);
-    const QColor colorWhite(255, 255, 255);
-    const QColor colorServer(18, 64, 171);
+    QColor colorDim(102, 102, 102);
+    QColor colorLightGray(221, 221, 221);
+    QColor colorWhite(255, 255, 255);
+    QColor colorServer(18, 64, 171);
+
+    QPalette pal = widget->palette();
+
+    colorServer = Theme_Color(ColorServerCluster);
+    colorWhite = pal.color(QPalette::Base);
+    colorLightGray = pal.color(QPalette::AlternateBase);
 
     QColor color = option->state & QStyle::State_MouseOver ?
                 colorLightGray :
@@ -268,30 +275,20 @@ void zmgCluster::paint(QPainter *painter, const QStyleOptionGraphicsItem *option
 
 
     // cluster name
-    color = option->palette.color(QPalette::Text);
+    color = pal.color(QPalette::WindowText);
 
     painter->setPen(QPen(color));
     painter->setFont(m_font);
-#if (QT_VERSION < QT_VERSION_CHECK(5, 11, 0))
-    painter->drawText(m_rect.x() + averageCharWidth + painter->fontMetrics().width("AAAA BB"),
+    painter->drawText(static_cast<int>(m_rect.x() + averageCharWidth + qreal(Theme_TextWidth(painter->fontMetrics(), "AAAA BB"))),
                       textY, m_text);
-#else
-    painter->drawText(static_cast<int>(m_rect.x() + averageCharWidth + qreal(painter->fontMetrics().horizontalAdvance("AAAA BB"))),
-                      textY, m_text);
-#endif
 
     // cluster attribute count
     color = colorDim;
 
     painter->setPen(QPen(color));
     painter->setFont(m_font);
-#if (QT_VERSION < QT_VERSION_CHECK(5, 11, 0))
-    painter->drawText(m_rect.x() + m_rect.width() - painter->fontMetrics().width(" (00) "),
+    painter->drawText(static_cast<int>(m_rect.x() + m_rect.width() - qreal(Theme_TextWidth(painter->fontMetrics(), " (00) "))),
                       textY, QString(QLatin1String("(%1)")).arg(m_attributeCount));
-#else
-    painter->drawText(static_cast<int>(m_rect.x() + m_rect.width() - qreal(painter->fontMetrics().horizontalAdvance(" (00) "))),
-                      textY, QString(QLatin1String("(%1)")).arg(m_attributeCount));
-#endif
 }
 
 QSizeF zmgCluster::sizeHint(Qt::SizeHint which, const QSizeF &) const
@@ -304,11 +301,7 @@ QSizeF zmgCluster::sizeHint(Qt::SizeHint which, const QSizeF &) const
     {
 //    case Qt::MinimumSize:
     case Qt::PreferredSize:
-#if (QT_VERSION < QT_VERSION_CHECK(5, 11, 0))
-        width += fm.width(m_text + QLatin1String("AAAA BB CC")) + 2 * fm.averageCharWidth(); // text
-#else
-        width += fm.horizontalAdvance(m_text + QLatin1String("AAAA BB CC")) + 2 * fm.averageCharWidth(); // text
-#endif
+        width += Theme_TextWidth(fm, m_text + QLatin1String("AAAA BB CC")) + 2 * fm.averageCharWidth(); // text
         size.setWidth(width);
         size.setHeight(fm.height() + 2 * fm.averageCharWidth());
         break;

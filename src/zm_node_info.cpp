@@ -13,7 +13,6 @@
 #include "deconz/atom_table.h"
 #include "deconz/dbg_trace.h"
 #include "deconz/u_sstream_ex.h"
-
 #include "actor_vfs_model.h"
 #include "zm_node_info.h"
 #include "ui_zm_node_info.h"
@@ -134,33 +133,24 @@ zmNodeInfo::zmNodeInfo(QWidget *parent) :
 
     ui->tableView->setModel(model);
 
-    {
-        std::array<int, 3> headerIdx = { IdxCommon, IdxNodeDescr, IdxPowerDescr };
+    // {
+    //     QFont fn = font();
+    //     fn.setWeight(QFont::Medium);
+    //     std::array<int, 3> headerIdx = { IdxCommon, IdxNodeDescr, IdxPowerDescr };
 
-        // H1
-        // header rows have dark background and bright text
-        for (int row : headerIdx)
-        {
-            m_info[row].key->setBackground(palette().dark());
-            m_info[row].key->setForeground(palette().brightText());
-            m_info[row].value->setBackground(palette().dark());
-        }
-    }
+    //     // H1
+    //     // header rows have dark background and bright text
+    //     for (int row : headerIdx)
+    //     {
+    //         m_info[row].key->setFont(fn);
+    //     }
+    // }
 
-    {
-        std::array<int, 3> headerIdx = { IdxNwk, IdxExt, IdxServerMask };
-
-        QFont fn = font();
-        fn.setStyleHint(QFont::Monospace);
-
-        for (int row : headerIdx)
-        {
-            m_info[row].value->setFont(fn);
-        }
-    }
+    updateHeader1Style();
 
     setNode(nullptr);
     ui->tableView->resizeColumnToContents(0);
+    //ui->tableView->setFont(Theme_FontMonospace());
 }
 
 zmNodeInfo::~zmNodeInfo()
@@ -232,16 +222,12 @@ void zmNodeInfo::setNode(ActorVfsModel *vfs, uint64_t mac)
 
 QString toHexString(uint16_t number)
 {
-    char buf[16];
-    int n = qsnprintf(buf, sizeof(buf), "0x%04x", number);
-    return QString::fromLatin1(buf, n);
+    return QString("0x%1").arg(number, 4, 16, QChar('0'));
 }
 
 QString toHexString(uint64_t number)
 {
-    char buf[24];
-    int n = qsnprintf(buf, sizeof(buf), "0x%016llx", number);
-    return QString::fromLatin1(buf, n);
+    return QString("0x%1").arg(number, 16, 16, QChar('0'));
 }
 
 void zmNodeInfo::setNode(deCONZ::zmNode *data)
@@ -401,6 +387,15 @@ void zmNodeInfo::dataChanged(deCONZ::zmNode *data)
     }
 }
 
+bool zmNodeInfo::event(QEvent *event)
+{
+    if (event->type() == QEvent::PaletteChange)
+    {
+        updateHeader1Style();
+    }
+    return QWidget::event(event);
+}
+
 void zmNodeInfo::clear()
 {
     QStandardItemModel *model = static_cast<QStandardItemModel*>(ui->tableView->model());
@@ -459,6 +454,26 @@ void zmNodeInfo::setValue(size_t idx, const QVariant &value)
         {
             m_info[idx].value->setData(value, Qt::DisplayRole);
         }
+    }
+}
+
+//! Adapt h1 header colors to theme.
+void zmNodeInfo::updateHeader1Style()
+{
+    QFont fn = font();
+    fn.setWeight(QFont::Medium);
+    std::array<int, 3> headerIdx = { IdxCommon, IdxNodeDescr, IdxPowerDescr };
+
+    int bri1 = palette().highlight().color().lightness();
+    int bri2 = palette().shadow().color().lightness();
+    int bri = (bri1 + bri2) / 2;
+    QBrush bg(QColor(bri, bri, bri));
+    for (int row : headerIdx)
+    {
+        m_info[row].key->setFont(fn);
+        m_info[row].key->setBackground(bg);
+        m_info[row].key->setForeground(palette().highlightedText());
+        m_info[row].value->setBackground(bg);
     }
 }
 

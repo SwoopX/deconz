@@ -11,6 +11,8 @@
 #include <QCheckBox>
 #include <QTimer>
 #include <QThread>
+#include <QSpacerItem>
+#include <QVariant>
 #include "deconz/dbg_trace.h"
 #include "debug_view.h"
 #include "ui_debug_view.h"
@@ -33,13 +35,15 @@ DebugView::DebugView(QWidget *parent) :
     _dbgView = this;
     ui->setupUi(this);
 
+    QFont fn = font();
+    fn.setWeight(QFont::Medium);
+    ui->labelDebugLevels->setFont(fn);
+
     const std::vector<int> levels = { DBG_INFO, DBG_INFO_L2, DBG_ERROR, DBG_ERROR_L2,
                                       DBG_DDF, DBG_DEV, DBG_JS, DBG_APS, DBG_APS_L2, DBG_ZGP,
                                       DBG_ZDP, DBG_ZCL, DBG_ZCLDB, DBG_IAS, DBG_OTA,
-                                      DBG_HTTP, DBG_TLINK, DBG_ROUTING, DBG_MEASURE
-#ifdef QT_DEBUG
-        , DBG_PROT, DBG_VFS
-#endif
+                                      DBG_HTTP, DBG_TLINK, DBG_ROUTING, DBG_MEASURE,
+                                      DBG_PROT, DBG_VFS, DBG_FIRMWARE
     };
 
     for (const auto level : levels)
@@ -59,6 +63,7 @@ DebugView::DebugView(QWidget *parent) :
     }
 
     QSpacerItem *spacer = new QSpacerItem(24,24, QSizePolicy::Minimum, QSizePolicy::Expanding);
+    setProperty("theme.bgrole", QPalette::Mid);
     ui->dbgItems->layout()->addItem(spacer);
     ui->log->setMaximumBlockCount(5000);
 

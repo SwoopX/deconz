@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2024 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2013-2025 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -12,14 +12,12 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QPainter>
 #include <QWidget>
-#include <QStyleOptionButton>
-#include <QStyleOptionGroupBox>
 #include <QStyleOptionGraphicsItem>
-#include <QStylePainter>
 #include <QDrag>
 #include <QMimeData>
 
 #include "deconz/zdp_descriptors.h"
+#include "gui/theme.h"
 #include "zcl_private.h"
 #include "zm_gendpoint.h"
 #include "zm_gendpointbox.h"
@@ -31,8 +29,7 @@ zmgEndpoint::zmgEndpoint(zmgEndpointBox *box, QGraphicsItem *parent) :
     m_endpoint(0),
     m_box(box)
 {
-    m_font = QApplication::font();
-    m_font.setPixelSize(IconSize * 0.6);
+    m_font = Theme_FontRegular();
 }
 
 QRectF zmgEndpoint::boundingRect() const
@@ -47,29 +44,19 @@ QSizeF zmgEndpoint::sizeHint(Qt::SizeHint which, const QSizeF &constraint) const
     QFontMetrics fm(m_font);
     Q_UNUSED(constraint)
 
-#if (QT_VERSION < QT_VERSION_CHECK(5, 11, 0))
-    width += fm.width(m_endpointText) + 2 * fm.averageCharWidth();
+    width += Theme_TextWidth(fm, m_endpointText) + 2 * fm.averageCharWidth();
 
-    if (m_device.textWidth() > fm.width(m_profile))
+    int deviceWidth = Theme_TextWidth(fm, m_device.text());
+    int profileWidth = Theme_TextWidth(fm, m_profile);
+
+    if (deviceWidth > profileWidth)
     {
-        width += m_device.textWidth();
+        width += deviceWidth;
     }
     else
     {
-        width += fm.width(m_profile);
+        width += profileWidth;
     }
-#else
-    width += fm.horizontalAdvance(m_endpointText) + 2 * fm.averageCharWidth();
-
-    if (m_device.textWidth() > fm.horizontalAdvance(m_profile))
-    {
-        width += m_device.textWidth();
-    }
-    else
-    {
-        width += fm.horizontalAdvance(m_profile);
-    }
-#endif
 
     switch (which)
     {
@@ -78,7 +65,7 @@ QSizeF zmgEndpoint::sizeHint(Qt::SizeHint which, const QSizeF &constraint) const
         width += 2 * IconSize; // icon space
         width += IconSize + fm.averageCharWidth(); // end freespace
         size.setWidth(width);
-        size.setHeight(2 * IconSize + 1.5 * fm.averageCharWidth() + m_device.size().height() + fm.leading());
+        size.setHeight(2 * IconSize + fm.capHeight());
         break;
 
     default:
@@ -95,47 +82,14 @@ void zmgEndpoint::setGeometry(const QRectF &rect)
 
 void zmgEndpoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
-    QStylePainter p(painter->device(), widget);
-    QStyleOptionButton opt;
-    QColor nodeColorBright(220, 220, 220);
-    QColor nodeColorDark(180, 180, 180);
+    QPalette pal = widget->palette();
+    const QColor nodeColorBright(pal.window().color());
 
-    p.setRenderHint(QPainter::Antialiasing, true);
-    p.setTransform(painter->transform());
-    opt.initFrom(widget);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(nodeColorBright);
+    painter->drawRoundedRect(option->rect.adjusted(2, 1, -2, -1), 2, 2);
 
-//    opt.features |= QStyleOptionButton::DefaultButton;
-//    opt.icon = m_iconDevice;
-//    opt.iconSize = QSize(32, 32);
-//    opt.text = m_device;
-//    opt.palette = option->palette;
-    opt.rect = option->rect;
-    opt.state = option->state;
-
-    QLinearGradient grad(option->rect.topLeft(), option->rect.bottomLeft());
-    grad.setColorAt(1.0, nodeColorDark.darker(130));
-    grad.setColorAt(0.99, nodeColorDark);
-    grad.setColorAt(0.05, nodeColorBright);
-    grad.setColorAt(0.025, nodeColorBright.lighter(220));
-    grad.setColorAt(0.0, nodeColorBright.lighter(250));
-
-    // fake shadow
-    p.setBrush(Qt::NoBrush);
-    p.setPen(QPen(nodeColorDark.darker(102), 1.1));
-    p.drawRoundedRect(option->rect.adjusted(2, 2, -1, -1), 3, 3);
-    p.setPen(QPen(nodeColorDark.darker(130), 0.8));
-    p.drawRoundedRect(option->rect.adjusted(3, 3, -2, -2), 3, 3);
-
-    p.setPen(Qt::NoPen);
-    p.setBrush(grad);
-//    p.setPen(QPen(borderColor, borderWidth));
-    p.drawRoundedRect(option->rect.adjusted(2, 2, -2, -2), 3, 3);
-
-    p.setPen(QPen(Qt::black));
-
-//    p.drawPrimitive(QStyle::PE_PanelButtonTool, opt);
-//    p.drawControl(QStyle::CE_PushButtonLabel, opt);
-
+    painter->setPen(QPen(pal.windowText().color(), 1));
     painter->setFont(m_font);
 
     qreal x = m_rect.x() + painter->fontMetrics().averageCharWidth();
@@ -143,15 +97,11 @@ void zmgEndpoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
 
     painter->drawText(x, y + painter->fontMetrics().height(), m_endpointText);
 
-#if (QT_VERSION < QT_VERSION_CHECK(5, 11, 0))
-    x += painter->fontMetrics().width(m_endpointText) +
+    x += Theme_TextWidth(painter->fontMetrics(), m_endpointText) +
          painter->fontMetrics().averageCharWidth();
-#else
-    x += painter->fontMetrics().horizontalAdvance(m_endpointText) +
-         painter->fontMetrics().averageCharWidth();
-#endif
 
-    if (!m_iconProfile.isNull())
+    // for now only draw profile and device icons with classic theme
+    if (Theme_Value(ThemeValueDeviceNodesV2) == 0 && !m_iconProfile.isNull())
     {
         qreal iconX = x;
 
@@ -169,11 +119,7 @@ void zmgEndpoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
     }
 
     painter->drawText(x, y + painter->fontMetrics().height(), m_profile);
-
-
-//    x = m_rect.x() + painter->fontMetrics().averageCharWidth();
     y += IconSize + painter->fontMetrics().leading();
-//    painter->drawText(x, y + painter->fontMetrics().height(), m_device);
     painter->drawStaticText(x, y, m_device);
 }
 
