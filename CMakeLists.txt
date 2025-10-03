@@ -5,10 +5,10 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS deployment v
 
 # Phoscon App and WebApp 2016 are fetched as external zip files
 # and are then copied in the respective packages.
-set(PWA_URL http://deconz.dresden-elektronik.de/phoscon_app/phoscon_app_2024-09-27.zip)
+set(PWA_URL http://deconz.dresden-elektronik.de/phoscon_app/phoscon_app_2025-08-29.zip)
 set(WEBAPP_URL http://deconz.dresden-elektronik.de/phoscon_app/webapp_2016.zip)
 
-project(deCONZ VERSION 2.31.0)
+project(deCONZ VERSION 2.31.2)
 
 if (NOT DEFINED BUILD_CHANNEL)
     set(BUILD_CHANNEL "")
