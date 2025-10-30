@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2024 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2013-2025 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -38,7 +38,7 @@ public:
         int fileSize = 0;
     };
 
-    explicit zmHttpClient(std::vector<CacheItem> &cache, QObject *parent = nullptr);
+    explicit zmHttpClient(const QString &serverRoot, std::vector<CacheItem> &cache, QObject *parent = nullptr);
     ~zmHttpClient();
     int registerClientHandler(deCONZ::HttpClientHandler *handler);
 
