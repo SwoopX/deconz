@@ -260,6 +260,7 @@ void zmGraphicsView::processIndications()
         {
             d_ptr->indicators[i] = d_ptr->indicators.back();
             d_ptr->indicators.pop_back();
+            i--;
         }
     }
 }
