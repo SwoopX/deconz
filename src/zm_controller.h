@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2025 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2013-2026 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -152,6 +152,7 @@ enum LinkViewMode
 
 QString createUuid(const QString &prefix);
 void generateUniqueId2(uint64_t extAddress, char *buf, unsigned buflen);
+void CoreNode_NotifyDeviceChanged(uint64_t mac, const char *path);
 
 class zmController : public deCONZ::ApsController
 {
@@ -230,12 +231,12 @@ public:
     const deCONZ::ApsDataRequest *getApsRequest(uint id) const;
     void onApsdeDataConfirm(const deCONZ::ApsDataConfirm &confirm);
 
-    void onNodeContextMenuRequest(uint64_t mac);
     void onNodeSelected(uint64_t mac);
     void onNodeDeselected(uint64_t mac);
     uint8_t nextRequestId();
 
 private slots:
+    void onMasterStateChanged();
     void onRestNodeUpdated(quint64 extAddress, const QString &item, const QString &value);
     void apsdeDataRequestDone(uint8_t id, uint8_t status);
     bool apsdeDataRequestQueueSetStatus(int id, deCONZ::CommonState state);
@@ -386,6 +387,8 @@ private:
     zmMaster *m_master;
     QGraphicsScene *m_scene;
 
+    QString m_httpProxy;
+    uint16_t m_httpProxyPort = 0;
     QString m_devName;
     QByteArray m_securityMaterial0;
     std::vector<FastDiscover> m_fastDiscover;

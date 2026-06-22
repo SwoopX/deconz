@@ -98,7 +98,7 @@ void GUI_InitNodeActor()
 
     am->register_actor(&am_actor_gui_node);
 
-    AT_AddAtom("config", qstrlen("config"), &ati_state);
+    AT_AddAtom("config", qstrlen("config"), &ati_config);
     AT_AddAtom("state", qstrlen("state"), &ati_state);
     AT_AddAtom("bri", qstrlen("bri"), &ati_bri);
     AT_AddAtom("on", qstrlen("on"), &ati_on);
@@ -673,6 +673,14 @@ void zmgNode::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, Q
     }
 }
 
+deCONZ::Address zmgNode::address() const
+{
+    deCONZ::Address addr;
+    addr.setExt(m_extAddressCache);
+    addr.setNwk(m_nwkAddressCache);
+    return addr;
+}
+
 
 void zmgNode::paintClassic(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
@@ -1138,6 +1146,11 @@ void zmgNode::setBattery(int battery)
 void zmgNode::setNeedSaveToDatabase(bool needSave)
 {
     m_needSaveToDatabase = needSave;
+}
+
+bool zmgNode::hasSourceRoutes() const
+{
+    return m_data && !m_data->sourceRoutes().empty();
 }
 
 void zmgNode::addLink(NodeLink *link)

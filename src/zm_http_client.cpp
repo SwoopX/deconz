@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2025 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2013-2026 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -18,6 +18,7 @@
 #include <QVariant>
 #include <QStringList>
 #include <QTimer>
+#include "u_platform.h"
 #include "deconz/dbg_trace.h"
 #include "deconz/http_client_handler.h"
 #include "deconz/util.h"
@@ -49,6 +50,9 @@ const char *HttpContentFontTtf     = "application/x-font-ttf";
 const char *HttpContentFontWoff    = "application/font-woff";
 const char *HttpContentFontWoff2   = "application/font-woff2";
 const char *HttpContentRSS         = "application/rss+xml";
+
+// check socket state
+// netstat -anp --inet | grep deCONZ
 
 zmHttpClient::zmHttpClient(const QString &serverRoot, std::vector<CacheItem> &cache, QObject *parent) :
     QTcpSocket(parent),
@@ -291,7 +295,12 @@ void zmHttpClient::handleHttpRequest()
 
             flush();
             m_timer->stop();
-            m_timer->start(10000);
+
+            if (!m_hdr.hasKey(QLatin1String("Upgrade"))) // for non Websockets keep the timer going
+            {
+                m_timer->start(10000);
+            }
+
             return;
         }
     }
@@ -802,7 +811,7 @@ int zmHttpClient::handleHttpFileRequest(const QHttpRequestHeader &hdr)
         flush();
 
         write(data);
-#ifdef Q_OS_WIN
+#ifdef PL_WINDOWS
         m_cache.clear();
 #endif
     }
@@ -831,7 +840,7 @@ int zmHttpClient::handleHttpFileRequest(const QHttpRequestHeader &hdr)
     }
     else
     {
-#ifndef QT_DEBUG // in debug mode SIGPIPE will be thrown too often
+#ifndef DECONZ_DEBUG_BUILD // in debug mode SIGPIPE will be thrown too often
         flush();
 #endif
     }

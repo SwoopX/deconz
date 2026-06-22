@@ -8,7 +8,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS deployment v
 set(PWA_URL http://deconz.dresden-elektronik.de/phoscon_app/phoscon_app_2025-08-29.zip)
 set(WEBAPP_URL http://deconz.dresden-elektronik.de/phoscon_app/webapp_2016.zip)
 
-project(deCONZ VERSION 2.32.2)
+project(deCONZ VERSION 2.33.0)
 
 if (NOT DEFINED BUILD_CHANNEL)
     set(BUILD_CHANNEL "")
@@ -35,6 +35,17 @@ if (Git_FOUND)
 endif()
 
 set(ENV{SOURCE_DATE_EPOCH} ${GIT_SRC_DATE})
+
+# cross compile for Apple Intel
+# -DCMAKE_OSX_ARCHITECTURES=x86_64
+
+# --- 32/64-bit -------------------------------------------------------
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(DECONZ_ARCH_64BIT ON)
+else()
+    set(DECONZ_ARCH_32BIT ON)
+endif()
+
 
 # --- build SQLite -----------------------------------------
 set(DECONZ_FULL_BUILD ON)

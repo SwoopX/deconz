@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2025 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2013-2026 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -598,6 +598,31 @@ static void CoreAps_ListDevicesDirectoryRequest(struct am_message *m, am_ls_dir_
     }
 }
 
+static void CoreAps_ListComDirectoryRequest(struct am_message *m, am_ls_dir_req *req)
+{
+    if (req->url_parse.element_count == 1) // com
+    {
+        am->msg_put_u8(m, AM_RESPONSE_STATUS_OK);
+        am->msg_put_u32(m, req->req_index);
+
+        am_u32 next_index = req->req_index;
+        am_u32 count = 0;
+        unsigned hdr_pos = m->pos;
+
+        am->msg_put_u32(m, 0); /* dummy next index */
+        am->msg_put_u32(m, 1); /* dummy count */
+
+        /*******************************************/
+
+        am->msg_put_cstring(m, "state");
+        am->msg_put_u16(m, 0); /* flags */
+        am->msg_put_u16(m, 1); /* icon */
+    }
+    else
+    {
+        am->msg_put_u8(m, AM_RESPONSE_STATUS_NOT_FOUND);
+    }
+}
 
 static int CoreAps_ListDirectoryRequest(struct am_message *msg)
 {
@@ -630,9 +655,13 @@ static int CoreAps_ListDirectoryRequest(struct am_message *msg)
         am->msg_put_u32(m, req.req_index);
         am->msg_put_u32(m, 0); /* no next index */
 
-        am->msg_put_u32(m, 4); /* count */
+        am->msg_put_u32(m, 5); /* count */
         /*************************************/
         am->msg_put_cstring(m, ".actor");
+        am->msg_put_u16(m, VFS_LS_DIR_ENTRY_FLAGS_IS_DIR); /* flags */
+        am->msg_put_u16(m, 0); /* icon */
+
+        am->msg_put_cstring(m, "com"); // serial port / tcp
         am->msg_put_u16(m, VFS_LS_DIR_ENTRY_FLAGS_IS_DIR); /* flags */
         am->msg_put_u16(m, 0); /* icon */
 
@@ -654,6 +683,10 @@ static int CoreAps_ListDirectoryRequest(struct am_message *msg)
         if (elem1 == "devices")
         {
             CoreAps_ListDevicesDirectoryRequest(m, &req);
+        }
+        else if (elem1 == "com")
+        {
+            CoreAps_ListComDirectoryRequest(m, &req);
         }
         else if (req.url_parse.url == ".actor" && req.req_index == 0 && req.url_parse.element_count == 1)
         {
@@ -780,6 +813,35 @@ static int CoreAps_ReadEntryRequest(struct am_message *msg)
         {
             Core_ReadEntryDevicesReq(m, &req);
         }
+        else if (elem0 == "com")
+        {
+            if (AM_UrlElementAt(&req.url_parse, 1) == "state")
+            {
+                am->msg_put_cstring(m, "str");
+                am->msg_put_u32(m, VFS_ENTRY_MODE_READONLY);
+                am->msg_put_u64(m, mtime);
+                auto netState = deCONZ::master()->netState();
+                if (deCONZ::master()->isOpen())
+                {
+                    if (netState == deCONZ::InNetwork)
+                        am->msg_put_cstring(m, "in_network");
+                    else if (netState == deCONZ::NotInNetwork)
+                        am->msg_put_cstring(m, "not_in_network");
+                    else if (netState == deCONZ::Connecting)
+                        am->msg_put_cstring(m, "joining");
+                    else if (netState == deCONZ::Leaving)
+                        am->msg_put_cstring(m, "leaving");
+                    else if (netState == deCONZ::Touchlink)
+                        am->msg_put_cstring(m, "touchlink");
+                    else
+                        am->msg_put_cstring(m, "unknown");
+                }
+                else
+                {
+                    am->msg_put_cstring(m, "disconnected");
+                }
+            }
+        }
         else if (elem0 == ".actor")
         {
             if (AM_UrlElementAt(&req.url_parse, 1) == "name")
@@ -865,11 +927,6 @@ static int CoreNode_GuiNodeMessageCallback(struct am_message *msg)
         deCONZ::controller()->onNodeDeselected(extaddr);
         return AM_CB_STATUS_OK;
     }
-    else if (msg->id == M_ID_GUI_NODE_CONTEXT_MENU)
-    {
-        deCONZ::controller()->onNodeContextMenuRequest(extaddr);
-        return AM_CB_STATUS_OK;
-    }
     else if (msg->id == M_ID_GUI_NODE_MOVED)
     {
         double x = am->msg_get_s32(msg);
@@ -897,6 +954,51 @@ static int CoreNode_MessageCallback(struct am_message *msg)
 
     DBG_Printf(DBG_INFO, "core/node: unknown msg (%u) from: %u\n", msg->id, msg->src);
     return AM_CB_STATUS_UNSUPPORTED;
+}
+
+void CoreAps_NotifyPathChanged(const char *path)
+{
+    if (!am || !path)
+        return;
+
+    char url[VFS_MAX_URL_LENGTH];
+
+    U_SStream ss;
+    U_sstream_init(&ss, url, VFS_MAX_URL_LENGTH);
+
+    U_sstream_put_str(&ss, path);
+
+    struct am_message *m = am->msg_alloc();
+    U_ASSERT(m);
+    if (!m)
+        return;
+
+    am_u32 flags = 0;
+    m->src = AM_ACTOR_ID_CORE_APS;
+    m->dst = AM_ACTOR_ID_SUBSCRIBERS;
+    m->id = VFS_M_ID_CHANGED_NTFY;
+    am->msg_put_cstring(m, url);
+    am->msg_put_u32(m, flags);
+
+    am->send_message(m);
+}
+
+void CoreNode_NotifyDeviceChanged(uint64_t mac, const char *path)
+{
+    if (!am || !mac || !path)
+        return;
+
+    char url[VFS_MAX_URL_LENGTH];
+
+    U_SStream ss;
+    U_sstream_init(&ss, url, VFS_MAX_URL_LENGTH);
+
+    U_sstream_put_str(&ss, "devices/");
+    U_sstream_put_mac_address(&ss, mac);
+    U_sstream_put_str(&ss, "/");
+    U_sstream_put_str(&ss, path);
+
+    CoreAps_NotifyPathChanged(url);
 }
 
 
@@ -1042,9 +1144,25 @@ zmController::zmController(zmMaster *master,
     m_timer = startTimer(TickMs);
     m_timeoutTimer = startTimer(TickMs);
 
+    {
+        QVariant value;
+        if (DB_LoadConfigValue("proxyaddress", &value))
+        {
+            m_httpProxy = value.toString();
+        }
+        if (DB_LoadConfigValue("proxyport", &value))
+        {
+            int port = value.toInt();
+            if (port >= 0 && port <= 0xFFFF)
+                m_httpProxyPort = (uint16_t)port;
+        }
+    }
+
     connect(m_master, &zmMaster::macPoll, this, &zmController::onMacPoll);
 
     connect(m_master, &zmMaster::beacon, this, &zmController::onBeacon);
+
+    connect(m_master, &zmMaster::netStateChanged, this, &zmController::onMasterStateChanged);
 
     // setup queue process
     connect(m_master, SIGNAL(commandQueueEmpty()),
@@ -1252,7 +1370,7 @@ void zmController::setNetworkConfig(const zmNet &net, const uint8_t *items)
             }
             else
             {
-                DBG_Printf(DBG_ERROR, "CTRL can't set network key with invalid size %d\n", key.size());
+                DBG_Printf(DBG_ERROR, "CTRL can't set network key with invalid size %d\n", (int)key.size());
             }
         }
             break;
@@ -1272,7 +1390,7 @@ void zmController::setNetworkConfig(const zmNet &net, const uint8_t *items)
             }
             else
             {
-                DBG_Printf(DBG_ERROR, "CTRL can't set ZLL key with invalid size %d\n", key.size());
+                DBG_Printf(DBG_ERROR, "CTRL can't set ZLL key with invalid size %d\n", (int)key.size());
             }
         }
             break;
@@ -1301,7 +1419,7 @@ void zmController::setNetworkConfig(const zmNet &net, const uint8_t *items)
             }
             else
             {
-                DBG_Printf(DBG_ERROR, "CTRL can't set link key with invalid size %d\n", key.size());
+                DBG_Printf(DBG_ERROR, "CTRL can't set link key with invalid size %d\n", (int)key.size());
             }
         }
             break;
@@ -2835,6 +2953,16 @@ bool zmController::setParameter(U16Parameter parameter, uint16_t value)
         }
         break;
 
+    case ParamHttpProxyPort:
+        {
+            if (m_httpProxyPort != value)
+            {
+                m_httpProxyPort = value;
+                DB_StoreConfigValue("proxyport", value);
+            }
+        }
+        break;
+
     default:
         break;
     }
@@ -3034,6 +3162,16 @@ bool zmController::setParameter(StringParameter parameter, const QString &value)
         case ParamDeviceName:
         {
             m_devName = value;
+        }
+        break;
+
+        case ParamHttpProxy:
+        {
+            if (m_httpProxy != value)
+            {
+                m_httpProxy = value;
+                DB_StoreConfigValue("proxyaddress", value);
+            }
         }
         break;
 
@@ -3247,6 +3385,9 @@ uint16_t zmController::getParameter(U16Parameter parameter)
     case ParamHttpsPort:
         return deCONZ::httpsServerPort();
 
+    case ParamHttpProxyPort:
+        return m_httpProxyPort;
+
     default:
         DBG_Printf(DBG_ERROR, "Unknown 16-bit parameter %d\n", (int)parameter);
         break;
@@ -3341,6 +3482,9 @@ QString zmController::getParameter(StringParameter parameter)
 
     case deCONZ::ParamDevicePath:
         return deCONZ::master()->devicePath();
+
+    case deCONZ::ParamHttpProxy:
+        return m_httpProxy;
 
     default:
         DBG_Printf(DBG_ERROR, "Unknown string parameter %d\n", (int)parameter);
@@ -3529,15 +3673,12 @@ bool zmController::updateNode(const Node &node)
 
 void zmController::deviceConnected()
 {
-    if (m_nodes.empty())
-    {
-        return;
-    }
+    CoreAps_NotifyPathChanged("com/state");
 }
 
 void zmController::deviceDisconnected(int)
 {
-
+    CoreAps_NotifyPathChanged("com/state");
 }
 
 int zmController::apsQueueSize()
@@ -3574,6 +3715,11 @@ uint8_t zmController::nextRequestId()
     }
 
     return apsDataRequestId;
+}
+
+void zmController::onMasterStateChanged()
+{
+    CoreAps_NotifyPathChanged("com/state");
 }
 
 /*!
@@ -3723,7 +3869,7 @@ int zmController::apsdeDataRequest(const deCONZ::ApsDataRequest &req)
             snprintf(addr, sizeof(addr), FMT_MAC, FMT_MAC_CAST(req.dstAddress().ext()));
         addr[18] = '\0';
 
-        DBG_Printf(DBG_APS, "APS-DATA.request id: %u, addrmode: 0x%02X, addr: %s, profile: 0x%04X, cluster: 0x%04X, ep: 0x%02X -> 0x%02X queue: %d len: %d tx.options 0x%02X\n", req.id(), (uint8_t)req.dstAddressMode(), addr, req.profileId(), req.clusterId(), req.srcEndpoint(), req.dstEndpoint(), (int)m_apsRequestQueue.size(), req.asdu().size(), (uint8_t)req.txOptions());
+        DBG_Printf(DBG_APS, "APS-DATA.request id: %u, addrmode: 0x%02X, addr: %s, profile: 0x%04X, cluster: 0x%04X, ep: 0x%02X -> 0x%02X queue: %d len: %d tx.options 0x%02X\n", req.id(), (uint8_t)req.dstAddressMode(), addr, req.profileId(), req.clusterId(), req.srcEndpoint(), req.dstEndpoint(), (int)m_apsRequestQueue.size(), (int)req.asdu().size(), (uint8_t)req.txOptions());
 
         if (DBG_IsEnabled(DBG_APS_L2))
         {
@@ -4400,7 +4546,7 @@ void zmController::onApsdeDataIndication(const deCONZ::ApsDataIndication &ind)
                             onSourceRouteChanged(*sourceRoute);
                         }
 
-                        if (sourceRoute->needSave() && !m_otauActive)
+                        if (sourceRoute->needSave() && m_otauActivity == 0)
                         {
                             emit sourceRouteCreated(*sourceRoute);
                             sourceRoute->saved();
@@ -4824,6 +4970,7 @@ void zmController::onApsdeDataIndication(const deCONZ::ApsDataIndication &ind)
                         node->data->setFetched(ReqNodeDescriptor, true);
                         node->g->setDeviceType(node->data->deviceType());
                         node->g->requestUpdate(); // redraw
+                        CoreNode_NotifyDeviceChanged(node->data->address().ext(), "node_desc");
 
                         NodeEvent event(NodeEvent::UpdatedNodeDescriptor, node->data);
                         emit nodeEvent(event);
@@ -7466,7 +7613,7 @@ bool zmController::sendNextApsdeDataRequest(NodeInfo *dst)
             {
                 if (dst && DBG_IsEnabled(DBG_APS))
                 {
-                    DBG_Printf(DBG_APS, "APS-DATA.request id: %u, addr: " FMT_MAC " profile: 0x%04X, cluster: 0x%04X, ep: 0x%02X/0x%02X queue: %d len: %d (send, fast lane)\n", apsReq.id(), FMT_MAC_CAST(apsReq.dstAddress().ext()), apsReq.profileId(), apsReq.clusterId(), apsReq.srcEndpoint(), apsReq.dstEndpoint(), (int)m_apsRequestQueue.size(), apsReq.asdu().size());
+                    DBG_Printf(DBG_APS, "APS-DATA.request id: %u, addr: " FMT_MAC " profile: 0x%04X, cluster: 0x%04X, ep: 0x%02X/0x%02X queue: %d len: %d (send, fast lane)\n", apsReq.id(), FMT_MAC_CAST(apsReq.dstAddress().ext()), apsReq.profileId(), apsReq.clusterId(), apsReq.srcEndpoint(), apsReq.dstEndpoint(), (int)m_apsRequestQueue.size(), (int)apsReq.asdu().size());
                 }
 
                 // note time of last send
@@ -7597,20 +7744,6 @@ void zmController::onNodeDeselected(uint64_t mac)
     if (node && node->data)
     {
         deCONZ::NodeEvent event(deCONZ::NodeEvent::NodeDeselected, node->data);
-        emit nodeEvent(event);
-    }
-}
-
-void zmController::onNodeContextMenuRequest(uint64_t mac)
-{
-    deCONZ::Address addr;
-    addr.setExt(mac);
-    NodeInfo *node = getNode(addr, deCONZ::ExtAddress);
-    U_ASSERT(node);
-    U_ASSERT(node->data);
-    if (node && node->data)
-    {
-        NodeEvent event(NodeEvent::NodeContextMenu, node->data);
         emit nodeEvent(event);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2025 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2013-2026 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -13,9 +13,9 @@
 #include <QFile>
 #include <QFileSystemWatcher>
 #include <QSettings>
+#include "deconz/u_platform.h"
 #include "zm_http_server.h"
 #include "zm_http_client.h"
-#include "zm_https_client.h"
 #include "deconz/dbg_trace.h"
 #include "deconz/http_client_handler.h"
 #include "deconz/n_ssl.h"
@@ -232,13 +232,18 @@ static void httpThreadFunc(void *arg)
                     if (cli.handle & NCLIENT_HANDLE_IS_SSL_FLAG)
                     {
                         bool needsClose = false;
+                        int handShake = N_SslHandshake(&cli.sslSock);
 
-                        if (N_SslHandshake(&cli.sslSock) != 0)
+                        if (handShake < 0) // error
+                        {
+                            needsClose = true;
+                        }
+                        else if (handShake > 0)
                         {
                             if (N_SslCanRead(&cli.sslSock))
                             {
                                 int n = N_SslRead(&cli.sslSock, d->ioBuf.data(), d->ioBuf.size() - 1);
-                                if (n == 0)
+                                if (n <= 0)
                                 {
                                     needsClose = true;
                                 }
@@ -271,14 +276,15 @@ static void httpThreadFunc(void *arg)
                                 }
                             }
 
-                            if (needsClose)
-                            {
-                                N_TcpClose(&cli.tcpSock);
-                                N_SslClose(&cli.sslSock);
+                        }
 
-                                cli = d->clients.back();
-                                d->clients.pop_back();
-                            }
+                        if (needsClose)
+                        {
+                            N_TcpClose(&cli.tcpSock);
+                            N_SslClose(&cli.sslSock);
+
+                            cli = d->clients.back();
+                            d->clients.pop_back();
                         }
                     }
                 }

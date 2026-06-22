@@ -41,6 +41,8 @@ set(PUB_INCLUDE_FILES
     db_nodes.h
     debug_view.h
     gui/actor_vfs_view.h
+    gui/gnode_link_group.h
+    gui/settings_proxy.h
     gui/theme.h
     mainwindow.h
     send_to_dialog.h
@@ -89,6 +91,7 @@ add_executable(${PROJECT_NAME}
 
     debug_view.ui
     gui/actor_vfs_view.ui
+    gui/settings_proxy.ui
     mainwindow.ui
     send_to_dialog.ui
     source_route_info.ui
@@ -110,6 +113,8 @@ add_executable(${PROJECT_NAME}
     db_nodes.cpp
     debug_view.cpp
     gui/actor_vfs_view.cpp
+    gui/gnode_link_group.cpp
+    gui/settings_proxy.cpp
     gui/theme.cpp
     main.cpp
     mainwindow.cpp
@@ -146,7 +151,6 @@ add_executable(${PROJECT_NAME}
     zm_settings_dialog.cpp
     zm_settings_discovery.cpp
     zm_settings_zcldb.cpp
-    gui/gnode_link_group.h gui/gnode_link_group.cpp
 )
 
 if (WIN32)
@@ -237,17 +241,7 @@ if (${SYS_ARCH} MATCHES "x86_64")
     target_compile_definitions(${PROJECT_NAME} PRIVATE   ARCH_AMD64)
 endif()
 
-
-if (APPLE)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE PL_MACOS PL_UNIX)
-endif()
-
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_compile_definitions(${PROJECT_NAME} PRIVATE PL_LINUX PL_UNIX)
-endif()
-
 if (WIN32)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE PL_WINDOWS)
     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_QSERIAL_PORT)
     set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
 endif()
